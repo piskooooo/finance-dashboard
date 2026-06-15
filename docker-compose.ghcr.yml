@@ -1,0 +1,14 @@
+services:
+  finance-dashboard:
+    image: ${IMAGE_NAME:-ghcr.io/YOUR_GITHUB_USERNAME/finance-dashboard:latest}
+    container_name: finance-dashboard
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATA_DIR: /app/data
+      CACHE_TTL_MS: ${CACHE_TTL_MS:-900000}
+    volumes:
+      - ${DATA_PATH:-./data}:/app/data
