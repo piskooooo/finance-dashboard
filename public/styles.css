@@ -31,6 +31,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -64,6 +65,7 @@ button.danger {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -74,6 +76,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(79, 143, 98, 0.18);
@@ -101,8 +104,32 @@ label {
   font-weight: 700;
 }
 
+.app-shell {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+}
+
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: grid;
+  gap: 22px;
+  min-height: 100vh;
+  border-right: 1px solid var(--line);
+  background: rgba(10, 13, 11, 0.92);
+  padding: 24px;
+}
+
+.brand-block h1 {
+  margin: 0;
+  font-size: 1.55rem;
+  line-height: 1.05;
+}
+
 .shell {
-  width: min(1440px, 100%);
+  width: min(1180px, 100%);
   margin: 0 auto;
   padding: 24px;
 }
@@ -120,20 +147,18 @@ label {
 }
 
 .tabs {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+  display: grid;
+  gap: 8px;
 }
 
 .tab-button {
-  flex: 0 0 auto;
+  width: 100%;
   border-color: var(--line);
   background: #101411;
   color: var(--muted);
   box-shadow: none;
   padding: 0.7rem 0.9rem;
+  text-align: left;
 }
 
 .tab-button:hover,
@@ -218,6 +243,11 @@ h2 {
 }
 
 #holdingForm {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.category-fields {
   display: grid;
   gap: 0.9rem;
 }
@@ -377,6 +407,36 @@ h2 {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
 }
 
+.chart-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.range-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.range-button {
+  border-color: var(--line);
+  background: #0d100e;
+  box-shadow: none;
+  color: var(--muted);
+  padding: 0.42rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.range-button.active,
+.range-button:hover {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--ink);
+}
+
 .allocation-list {
   display: grid;
   gap: 12px;
@@ -483,6 +543,31 @@ h2 {
   font-size: 0.82rem;
 }
 
+.detail-list {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.6fr) 1fr;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101411;
+  padding: 13px;
+}
+
+.detail-row span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.detail-row strong {
+  overflow-wrap: anywhere;
+}
+
 .empty-state {
   display: grid;
   gap: 0.2rem;
@@ -502,6 +587,27 @@ h2 {
 }
 
 @media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .app-sidebar {
+    position: static;
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tabs {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .tab-button {
+    width: auto;
+    flex: 0 0 auto;
+  }
+
   .layout,
   .content-grid {
     grid-template-columns: 1fr;
@@ -518,8 +624,13 @@ h2 {
     padding: 16px;
   }
 
+  .app-sidebar {
+    padding: 16px;
+  }
+
   .topbar,
-  .hero-panel {
+  .hero-panel,
+  .chart-header {
     align-items: stretch;
     flex-direction: column;
   }
@@ -531,7 +642,9 @@ h2 {
     grid-template-columns: 1fr;
   }
 
-  .quote-tile {
+  .quote-tile,
+  .detail-row {
     min-width: 0;
+    grid-template-columns: 1fr;
   }
 }

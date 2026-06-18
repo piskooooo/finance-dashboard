@@ -99,7 +99,8 @@ function normalizeHoldingRecord(input) {
   const units = Number(input.units ?? input.shares ?? 0);
   const amount = Number(input.amount ?? 0);
   const totalCost = Number(input.totalCost ?? input.avgCost ?? 0);
-  const id = input.id || `${category}-${symbol || makeId(name) || Date.now()}`;
+  const costPerUnit = Number(input.costPerUnit ?? input.avgCost ?? 0);
+  const id = input.id || (symbol ? `${category}-${symbol}` : `${category}-${makeId(name) || "item"}-${Date.now()}`);
 
   return {
     id,
@@ -112,7 +113,15 @@ function normalizeHoldingRecord(input) {
     quantityMode,
     units: Number.isFinite(units) ? units : 0,
     amount: Number.isFinite(amount) ? amount : 0,
+    costBasisMode: input.costBasisMode === "total" ? "total" : "perUnit",
+    costPerUnit: Number.isFinite(costPerUnit) ? costPerUnit : 0,
     totalCost: Number.isFinite(totalCost) ? totalCost : 0,
+    currency: String(input.currency || "USD").trim().toUpperCase(),
+    institution: String(input.institution || "").trim(),
+    accountUse: String(input.accountUse || "").trim(),
+    accountType: String(input.accountType || "").trim(),
+    apy: Number(input.apy || 0),
+    cardType: String(input.cardType || "").trim(),
     notes: String(input.notes || "").trim(),
     updatedAt: input.updatedAt || new Date().toISOString(),
     createdAt: input.createdAt
@@ -214,8 +223,26 @@ async function fetchHistory(symbol) {
     .slice(-260);
 }
 
-async function fetchYahooChart(symbol) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1y&interval=1d`;
+function yahooChartParams(rangeKey) {
+  const now = Math.floor(Date.now() / 1000);
+  if (rangeKey === "ytd") {
+    const start = new Date(new Date().getFullYear(), 0, 1);
+    return `period1=${Math.floor(start.getTime() / 1000)}&period2=${now}&interval=1d`;
+  }
+
+  const map = {
+    "24h": "range=1d&interval=5m",
+    "5d": "range=5d&interval=15m",
+    "1m": "range=1mo&interval=1d",
+    "1y": "range=1y&interval=1d",
+    "5y": "range=5y&interval=1wk",
+    "all": "range=max&interval=1mo"
+  };
+  return map[rangeKey] || map["24h"];
+}
+
+async function fetchYahooChart(symbol, rangeKey = "24h") {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${yahooChartParams(rangeKey)}`;
   const raw = await fetchText(url);
   const parsed = JSON.parse(raw);
   const result = parsed.chart?.result?.[0];
@@ -271,7 +298,7 @@ async function fetchNews(symbol) {
   const articles = [];
   let match;
 
-  while ((match = itemRegex.exec(xml)) && articles.length < 12) {
+  while ((match = itemRegex.exec(xml)) && articles.length < 6) {
     const item = match[1];
     const field = (name) => {
       const found = item.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`));
@@ -340,17 +367,19 @@ function summarize(symbol, quote, history, news) {
 
 async function marketOverview(symbol, options = {}) {
   const clean = cleanSymbol(symbol);
+  const range = String(options.range || "24h").toLowerCase();
   if (!clean) {
     const err = new Error("A stock symbol is required.");
     err.status = 400;
     throw err;
   }
 
-  const cached = marketCache.get(clean);
+  const cacheKey = `${clean}:${range}`;
+  const cached = marketCache.get(cacheKey);
   if (!options.forceRefresh && cached && Date.now() - cached.createdAt < CACHE_TTL_MS) return cached.payload;
 
   const [yahooResult, stooqQuoteResult, stooqHistoryResult, newsResult] = await Promise.allSettled([
-    fetchYahooChart(clean),
+    fetchYahooChart(clean, range),
     fetchQuote(clean),
     fetchHistory(clean),
     fetchNews(clean)
@@ -366,14 +395,15 @@ async function marketOverview(symbol, options = {}) {
 
   const payload = {
     symbol: clean,
+    range,
     quote,
-    history: history.slice(-30),
+    history,
     news,
     summary: quote || history.length ? summarize(clean, quote || {}, history, news) : null,
     errors
   };
 
-  marketCache.set(clean, { createdAt: Date.now(), payload });
+  marketCache.set(cacheKey, { createdAt: Date.now(), payload });
   return payload;
 }
 
@@ -423,6 +453,7 @@ async function handleApi(req, res, url) {
   const marketMatch = url.pathname.match(/^\/api\/market\/([^/]+)$/);
   if (marketMatch && req.method === "GET") {
     return sendJson(res, 200, await marketOverview(decodeURIComponent(marketMatch[1]), {
+      range: url.searchParams.get("range") || "24h",
       forceRefresh: url.searchParams.has("t") || url.searchParams.get("refresh") === "1"
     }));
   }

@@ -4,9 +4,19 @@ const categories = [
   { id: "crypto", label: "Crypto", singular: "crypto asset", tracked: true, units: "Coins / tokens" },
   { id: "commodities", label: "Commodities", singular: "commodity", tracked: true, units: "Units" },
   { id: "alts", label: "Alt investments", singular: "alt investment", tracked: false, units: "Items" },
-  { id: "credit", label: "Credit", singular: "credit account", tracked: false, debt: true, units: "Accounts" },
+  { id: "credit", label: "Credit", singular: "card", tracked: false, debt: true, units: "Cards" },
   { id: "loans", label: "Loans", singular: "loan", tracked: false, debt: true, units: "Loans" },
   { id: "cash", label: "Cash", singular: "cash account", tracked: false, units: "Accounts" }
+];
+
+const chartRanges = [
+  { id: "24h", label: "24H" },
+  { id: "5d", label: "5D" },
+  { id: "1m", label: "1M" },
+  { id: "ytd", label: "YTD" },
+  { id: "1y", label: "1Y" },
+  { id: "5y", label: "5Y" },
+  { id: "all", label: "All" }
 ];
 
 const categoryMap = Object.fromEntries(categories.map((category) => [category.id, category]));
@@ -16,11 +26,14 @@ const state = {
   markets: new Map(),
   activeTab: "dashboard",
   selectedId: null,
-  lookupTimer: null
+  lookupTimer: null,
+  chartRange: "24h"
 };
 
 const elements = {
   tabs: document.querySelector("#assetTabs"),
+  sectionEyebrow: document.querySelector("#sectionEyebrow"),
+  sectionTitle: document.querySelector("#sectionTitle"),
   dashboardView: document.querySelector("#dashboardView"),
   assetView: document.querySelector("#assetView"),
   form: document.querySelector("#holdingForm"),
@@ -28,6 +41,8 @@ const elements = {
   formHint: document.querySelector("#formHint"),
   symbolField: document.querySelector("#symbolField"),
   symbolInput: document.querySelector('[name="symbol"]'),
+  nameField: document.querySelector("#nameField"),
+  nameLabel: document.querySelector("#nameLabel"),
   nameInput: document.querySelector('[name="name"]'),
   exchangeInput: document.querySelector('[name="exchange"]'),
   quoteTypeInput: document.querySelector('[name="quoteType"]'),
@@ -35,11 +50,20 @@ const elements = {
   symbolResults: document.querySelector("#symbolResults"),
   quantityMode: document.querySelector("#quantityMode"),
   unitsModeLabel: document.querySelector("#unitsModeLabel"),
+  amountModeLabel: document.querySelector("#amountModeLabel"),
   unitsField: document.querySelector("#unitsField"),
   amountField: document.querySelector("#amountField"),
+  amountLabel: document.querySelector("#amountLabel"),
   unitsLabel: document.querySelector("#unitsLabel"),
   unitsInput: document.querySelector('[name="units"]'),
   amountInput: document.querySelector('[name="amount"]'),
+  costBasisMode: document.querySelector("#costBasisMode"),
+  costPerUnitField: document.querySelector("#costPerUnitField"),
+  costPerUnitLabel: document.querySelector("#costPerUnitLabel"),
+  costTotalField: document.querySelector("#costTotalField"),
+  costTotalLabel: document.querySelector("#costTotalLabel"),
+  cashFields: document.querySelector("#cashFields"),
+  creditFields: document.querySelector("#creditFields"),
   holdingsList: document.querySelector("#holdingsList"),
   holdingCount: document.querySelector("#holdingCount"),
   listTitle: document.querySelector("#listTitle"),
@@ -49,14 +73,23 @@ const elements = {
   valueLabel: document.querySelector("#valueLabel"),
   lastPrice: document.querySelector("#lastPrice"),
   quoteMeta: document.querySelector("#quoteMeta"),
+  metricOneLabel: document.querySelector("#metricOneLabel"),
+  metricTwoLabel: document.querySelector("#metricTwoLabel"),
   dayChange: document.querySelector("#dayChange"),
   weekChange: document.querySelector("#weekChange"),
   sharesHeld: document.querySelector("#sharesHeld"),
   unitsHeldLabel: document.querySelector("#unitsHeldLabel"),
   positionValue: document.querySelector("#positionValue"),
+  positionValueLabel: document.querySelector("#positionValueLabel"),
+  marketDetails: document.querySelector("#marketDetails"),
+  manualDetails: document.querySelector("#manualDetails"),
+  manualTitle: document.querySelector("#manualTitle"),
+  manualCaption: document.querySelector("#manualCaption"),
+  manualList: document.querySelector("#manualList"),
   priceChart: document.querySelector("#priceChart"),
   chartTitle: document.querySelector("#chartTitle"),
   chartCaption: document.querySelector("#chartCaption"),
+  rangeControls: document.querySelector("#rangeControls"),
   newsTitle: document.querySelector("#newsTitle"),
   newsList: document.querySelector("#newsList"),
   newsCaption: document.querySelector("#newsCaption"),
@@ -72,9 +105,9 @@ const elements = {
   attentionList: document.querySelector("#attentionList")
 };
 
-function currency(value) {
+function currency(value, code = "USD") {
   if (!Number.isFinite(value)) return "--";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: code || "USD" }).format(value);
 }
 
 function number(value, digits = 8) {
@@ -116,7 +149,15 @@ function normalizeHolding(holding) {
     quantityMode: holding.quantityMode === "value" ? "value" : "units",
     units: Number(holding.units ?? holding.shares ?? 0),
     amount: Number(holding.amount ?? 0),
-    totalCost: Number(holding.totalCost ?? holding.avgCost ?? 0),
+    costBasisMode: holding.costBasisMode === "total" ? "total" : "perUnit",
+    costPerUnit: Number(holding.costPerUnit ?? holding.avgCost ?? 0),
+    totalCost: Number(holding.totalCost ?? 0),
+    currency: holding.currency || "USD",
+    institution: holding.institution || "",
+    accountUse: holding.accountUse || "",
+    accountType: holding.accountType || "",
+    apy: Number(holding.apy || 0),
+    cardType: holding.cardType || "",
     notes: holding.notes || ""
   };
 }
@@ -133,25 +174,29 @@ function activeHolding() {
   return state.holdings.find((holding) => holding.id === state.selectedId) || null;
 }
 
+function marketKey(symbol, range = state.chartRange) {
+  return `${symbol}:${range}`;
+}
+
 function marketFor(holding) {
-  return holding?.symbol ? state.markets.get(holding.symbol) : null;
+  return holding?.symbol ? state.markets.get(marketKey(holding.symbol)) : null;
 }
 
 function itemValue(holding) {
   const market = marketFor(holding);
   const price = market?.quote?.price;
 
-  if (holding.quantityMode === "units" && Number.isFinite(price) && holding.units > 0) {
-    return holding.units * price;
-  }
-
+  if (holding.quantityMode === "units" && Number.isFinite(price) && holding.units > 0) return holding.units * price;
   if (holding.quantityMode === "value" && holding.amount > 0) return holding.amount;
+  if (!categoryMap[holding.category]?.tracked && holding.amount > 0) return holding.amount;
   if (holding.totalCost > 0) return holding.totalCost;
+  if (holding.costPerUnit > 0 && holding.units > 0) return holding.costPerUnit * holding.units;
   if (holding.units > 0 && !Number.isFinite(price)) return null;
   return 0;
 }
 
 function itemCost(holding) {
+  if (holding.costBasisMode === "perUnit" && holding.costPerUnit > 0 && holding.units > 0) return holding.costPerUnit * holding.units;
   if (holding.totalCost > 0) return holding.totalCost;
   if (holding.quantityMode === "value" && holding.amount > 0) return holding.amount;
   return null;
@@ -163,6 +208,19 @@ function signedValue(holding) {
   return categoryMap[holding.category]?.debt ? -Math.abs(value) : value;
 }
 
+function emptyState(title, text) {
+  const empty = elements.emptyStateTemplate.content.cloneNode(true);
+  empty.querySelector("strong").textContent = title;
+  empty.querySelector("span").textContent = text;
+  return empty;
+}
+
+function clearSymbolResults() {
+  window.clearTimeout(state.lookupTimer);
+  elements.symbolResults.innerHTML = "";
+  elements.symbolResults.hidden = true;
+}
+
 function renderTabs() {
   elements.tabs.innerHTML = "";
   for (const category of categories) {
@@ -172,6 +230,22 @@ function renderTabs() {
     button.textContent = category.label;
     button.addEventListener("click", () => setTab(category.id));
     elements.tabs.append(button);
+  }
+}
+
+function renderRangeControls() {
+  elements.rangeControls.innerHTML = "";
+  for (const range of chartRanges) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `range-button${state.chartRange === range.id ? " active" : ""}`;
+    button.textContent = range.label;
+    button.addEventListener("click", async () => {
+      state.chartRange = range.id;
+      renderRangeControls();
+      if (state.selectedId) await selectHolding(state.selectedId, true);
+    });
+    elements.rangeControls.append(button);
   }
 }
 
@@ -188,7 +262,6 @@ function renderDashboard() {
   elements.positionCount.textContent = number(state.holdings.length, 0);
   elements.marketCount.textContent = number(marketItems, 0);
   elements.totalMeta.textContent = `${state.holdings.length} total item${state.holdings.length === 1 ? "" : "s"}`;
-
   renderAllocation();
   renderAttention();
 }
@@ -205,7 +278,7 @@ function renderAllocation() {
     .filter((group) => group.count || group.total);
 
   if (!groups.length) {
-    elements.allocationList.append(emptyState("No tracked values yet", "Add items from the tabs above."));
+    elements.allocationList.append(emptyState("No tracked values yet", "Add items from the sidebar sections."));
     return;
   }
 
@@ -243,46 +316,59 @@ function renderAttention() {
   }
 }
 
-function emptyState(title, text) {
-  const empty = elements.emptyStateTemplate.content.cloneNode(true);
-  empty.querySelector("strong").textContent = title;
-  empty.querySelector("span").textContent = text;
-  return empty;
+function setFieldVisibility(category) {
+  const isTracked = category.tracked;
+  const isCash = category.id === "cash";
+  const isCredit = category.id === "credit";
+  const isDebt = category.id === "loans" || isCredit;
+
+  elements.symbolField.classList.toggle("hidden", !isTracked);
+  elements.symbolInput.required = isTracked;
+  elements.cashFields.classList.toggle("hidden", !isCash);
+  elements.creditFields.classList.toggle("hidden", !isCredit);
+  elements.quantityMode.classList.toggle("hidden", isCash || isCredit || category.id === "loans");
+  elements.costBasisMode.classList.toggle("hidden", !isTracked);
+  elements.costPerUnitField.classList.toggle("hidden", !isTracked || new FormData(elements.form).get("costBasisMode") === "total");
+  elements.costTotalField.classList.toggle("hidden", isCash || isCredit || category.id === "loans" || (isTracked && new FormData(elements.form).get("costBasisMode") !== "total"));
+  elements.unitsField.classList.toggle("hidden", isCash || isCredit || category.id === "loans" || new FormData(elements.form).get("quantityMode") !== "units");
+  elements.amountField.classList.toggle("hidden", isTracked && new FormData(elements.form).get("quantityMode") !== "value");
+
+  elements.amountLabel.textContent = isDebt ? "Total owed" : isCash ? "Current balance" : "Total dollar amount";
+  elements.nameLabel.textContent = isCash ? "Account nickname" : isCredit ? "Card name" : category.id === "loans" ? "Loan name" : "Name";
+  elements.amountModeLabel.textContent = isDebt ? "Total owed" : "Total dollar amount";
 }
 
 function renderAssetForm() {
   const category = activeCategory();
-  const isTracked = category.tracked;
+  elements.sectionEyebrow.textContent = category.label;
+  elements.sectionTitle.textContent = category.label;
   elements.formTitle.textContent = `Add ${category.singular}`;
-  elements.formHint.textContent = isTracked
+  elements.formHint.textContent = category.tracked
     ? "Type a ticker and pick a Yahoo Finance match to autofill name/details."
-    : "Enter the value manually for private assets, credit, loans, or cash.";
+    : "Manual entry. Add as many accounts or items as you need.";
   elements.categoryInput.value = category.id;
-  elements.symbolField.classList.toggle("hidden", !isTracked);
-  elements.symbolInput.required = isTracked;
   elements.unitsLabel.textContent = category.units;
   elements.unitsModeLabel.textContent = category.units;
   elements.unitsHeldLabel.textContent = category.units;
   elements.listTitle.textContent = category.label;
   elements.selectedEyebrow.textContent = `Selected ${category.singular}`;
-  elements.valueLabel.textContent = category.debt ? "Balance" : "Estimated value";
-  elements.chartTitle.textContent = isTracked ? "30-day price line" : "Manual value";
-  elements.newsTitle.textContent = isTracked ? "Related news" : "Notes";
+  elements.valueLabel.textContent = category.debt ? "Balance owed" : "Estimated value";
+  elements.costPerUnitLabel.textContent = category.id === "stocks" ? "Cost basis per share" : "Cost basis per unit";
+  elements.metricOneLabel.textContent = category.tracked ? "Daily move" : category.id === "credit" ? "Minimum payment" : "Type";
+  elements.metricTwoLabel.textContent = category.tracked ? "Range move" : category.id === "credit" ? "Payoff time" : "Currency / APR";
+  elements.positionValueLabel.textContent = category.debt ? "Balance" : "Value";
+  setFieldVisibility(category);
 }
 
 function renderQuantityMode() {
-  const mode = new FormData(elements.form).get("quantityMode") || "units";
-  elements.unitsField.classList.toggle("hidden", mode !== "units");
-  elements.amountField.classList.toggle("hidden", mode !== "value");
+  setFieldVisibility(activeCategory());
 }
 
 function renderHoldings() {
   const category = activeCategory();
   const holdings = currentHoldings();
   elements.holdingsList.innerHTML = "";
-  elements.holdingCount.textContent = holdings.length
-    ? `${holdings.length} item${holdings.length === 1 ? "" : "s"}`
-    : `No ${category.label.toLowerCase()} yet`;
+  elements.holdingCount.textContent = holdings.length ? `${holdings.length} item${holdings.length === 1 ? "" : "s"}` : `No ${category.label.toLowerCase()} yet`;
 
   if (!holdings.length) {
     elements.holdingsList.append(emptyState(`No ${category.label.toLowerCase()} yet`, "Add the first one above."));
@@ -294,11 +380,14 @@ function renderHoldings() {
     row.className = `holding-row${holding.id === state.selectedId ? " active" : ""}`;
     const label = holding.symbol || holding.name;
     const value = signedValue(holding);
+    const sub = holding.category === "cash" && holding.institution
+      ? `${holding.institution} · ${holding.accountType || "account"}`
+      : holding.name && holding.symbol ? holding.name : currency(Math.abs(value || 0), holding.currency);
 
     const button = document.createElement("button");
     button.type = "button";
     button.className = "holding-select";
-    button.innerHTML = `<strong>${label}</strong><span>${holding.name && holding.symbol ? holding.name : currency(Math.abs(value || 0))}</span>`;
+    button.innerHTML = `<strong>${label}</strong><span>${sub}</span>`;
     button.addEventListener("click", () => selectHolding(holding.id));
 
     const remove = document.createElement("button");
@@ -315,16 +404,22 @@ function renderHoldings() {
   }
 }
 
+function resetDetailPanels(showMarket) {
+  elements.marketDetails.classList.toggle("hidden", !showMarket);
+  elements.manualDetails.classList.toggle("hidden", showMarket);
+}
+
 function renderEmptyMarket(message = "Select an item to view details.") {
   const holding = activeHolding();
+  resetDetailPanels(Boolean(holding?.trackingType === "market"));
   elements.selectedTitle.textContent = holding ? holding.symbol || holding.name : "Add an item to begin";
   elements.selectedSummary.textContent = message;
-  elements.lastPrice.textContent = holding ? currency(Math.abs(signedValue(holding) || 0)) : "--";
+  elements.lastPrice.textContent = holding ? currency(Math.abs(signedValue(holding) || 0), holding.currency) : "--";
   elements.quoteMeta.textContent = holding?.trackingType === "market" ? "No quote loaded" : "Manual value";
   setSignedMetric(elements.dayChange, null);
   setSignedMetric(elements.weekChange, null);
-  elements.sharesHeld.textContent = holding ? holding.quantityMode === "units" ? number(holding.units) : currency(holding.amount) : "--";
-  elements.positionValue.textContent = holding ? currency(Math.abs(signedValue(holding) || 0)) : "--";
+  elements.sharesHeld.textContent = holding ? holding.quantityMode === "units" ? number(holding.units) : currency(holding.amount, holding.currency) : "--";
+  elements.positionValue.textContent = holding ? currency(Math.abs(signedValue(holding) || 0), holding.currency) : "--";
   elements.chartCaption.textContent = "Price history unavailable.";
   elements.priceChart.innerHTML = "";
   elements.newsCaption.textContent = "No articles loaded.";
@@ -359,29 +454,25 @@ function renderChart(history) {
   axis.setAttribute("x2", width - pad);
   axis.setAttribute("y1", height - pad);
   axis.setAttribute("y2", height - pad);
-
   const areaPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
   areaPath.setAttribute("class", "chart-area");
   areaPath.setAttribute("d", area);
-
   const linePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
   linePath.setAttribute("class", "chart-line");
   linePath.setAttribute("d", line);
-
   elements.priceChart.append(areaPath, axis, linePath);
   elements.chartCaption.textContent = `${history[0].date} to ${history.at(-1).date}`;
 }
 
 function renderNews(news) {
+  const items = (news || []).slice(0, 6);
   elements.newsList.innerHTML = "";
-  elements.newsCaption.textContent = news?.length ? `${news.length} recent articles` : "No articles returned.";
-
-  if (!news?.length) {
+  elements.newsCaption.textContent = items.length ? `${items.length} recent articles` : "No articles returned.";
+  if (!items.length) {
     elements.newsList.append(emptyState("No news found", "Try refreshing later or confirm the ticker symbol."));
     return;
   }
-
-  for (const article of news) {
+  for (const article of items) {
     const link = document.createElement("a");
     link.className = "news-item";
     link.href = article.link;
@@ -392,51 +483,119 @@ function renderNews(news) {
   }
 }
 
+function creditEstimate(holding) {
+  const balance = Math.abs(itemValue(holding) || 0);
+  const apr = Math.max(holding.apy || 0, 0);
+  if (!balance) return { minimum: 0, months: 0, interest: 0 };
+  if (holding.cardType === "charge") return { minimum: balance, months: 1, interest: 0 };
+  const minimum = Math.max(balance * 0.02, 25);
+  if (apr === 0) return { minimum, months: Math.ceil(balance / minimum), interest: 0 };
+  const monthlyRate = apr / 100 / 12;
+  let current = balance;
+  let months = 0;
+  let interest = 0;
+  while (current > 0.01 && months < 600) {
+    const charge = current * monthlyRate;
+    interest += charge;
+    current = current + charge - Math.min(minimum, current + charge);
+    months += 1;
+  }
+  return { minimum, months, interest };
+}
+
+function detailRow(label, value) {
+  return `<div class="detail-row"><span>${label}</span><strong>${value || "--"}</strong></div>`;
+}
+
 function renderManualDetails(holding) {
-  const cost = itemCost(holding);
+  const category = categoryMap[holding.category];
+  const value = Math.abs(signedValue(holding) || 0);
+  resetDetailPanels(false);
   elements.selectedTitle.textContent = holding.name || holding.symbol;
-  elements.selectedSummary.textContent = holding.notes || `${categoryMap[holding.category].label} item tracked manually.`;
-  elements.lastPrice.textContent = currency(Math.abs(signedValue(holding) || 0));
-  elements.quoteMeta.textContent = cost ? `Cost basis: ${currency(cost)}` : "Manual entry";
-  setSignedMetric(elements.dayChange, null);
-  setSignedMetric(elements.weekChange, null);
-  elements.sharesHeld.textContent = holding.quantityMode === "units" ? number(holding.units) : currency(holding.amount);
-  elements.positionValue.textContent = currency(Math.abs(signedValue(holding) || 0));
-  elements.priceChart.innerHTML = "";
-  elements.chartCaption.textContent = holding.notes ? "Notes shown on the right." : "No market chart for manual items.";
-  elements.newsCaption.textContent = "Manual item notes";
-  elements.newsList.innerHTML = "";
-  elements.newsList.append(emptyState("Manual tracking", holding.notes || "Add notes to describe valuation, appraisals, payoff plans, or account details."));
+  elements.selectedSummary.textContent = holding.notes || `${category.label} item tracked manually.`;
+  elements.lastPrice.textContent = currency(value, holding.currency);
+  elements.quoteMeta.textContent = category.debt ? "Manual debt balance" : "Manual entry";
+  elements.dayChange.classList.remove("positive", "negative");
+  elements.weekChange.classList.remove("positive", "negative");
+  elements.sharesHeld.textContent = holding.quantityMode === "units" ? number(holding.units) : currency(holding.amount, holding.currency);
+  elements.positionValue.textContent = currency(value, holding.currency);
+
+  let rows = [];
+  if (holding.category === "cash") {
+    elements.dayChange.textContent = holding.accountType || "--";
+    elements.weekChange.textContent = holding.currency || "USD";
+    rows = [
+      detailRow("Bank / institution", holding.institution),
+      detailRow("Account type", holding.accountType),
+      detailRow("Personal / business", holding.accountUse),
+      detailRow("Currency", holding.currency),
+      detailRow("Balance", currency(value, holding.currency))
+    ];
+  } else if (holding.category === "credit") {
+    const estimate = creditEstimate(holding);
+    elements.dayChange.textContent = currency(estimate.minimum, holding.currency);
+    elements.weekChange.textContent = estimate.months ? `${estimate.months} mo` : "--";
+    rows = [
+      detailRow("Card type", holding.cardType === "charge" ? "Charge card" : "Credit card"),
+      detailRow("APR", `${number(holding.apy, 2)}%`),
+      detailRow("Estimated minimum", currency(estimate.minimum, holding.currency)),
+      detailRow("Minimum-only payoff", estimate.months ? `${estimate.months} months` : "--"),
+      detailRow("Estimated interest", currency(estimate.interest, holding.currency))
+    ];
+  } else {
+    const cost = itemCost(holding);
+    elements.dayChange.textContent = holding.accountType || "--";
+    elements.weekChange.textContent = holding.apy ? `${number(holding.apy, 2)}%` : holding.currency || "USD";
+    rows = [
+      detailRow("Category", category.label),
+      detailRow("Value", currency(value, holding.currency)),
+      detailRow("Cost basis", cost ? currency(cost, holding.currency) : "--"),
+      detailRow("Notes", holding.notes)
+    ];
+  }
+
+  elements.manualTitle.textContent = `${category.label} details`;
+  elements.manualCaption.textContent = "Manual entry. No market chart is shown for this section.";
+  elements.manualList.innerHTML = rows.join("");
 }
 
 function renderMarket() {
   const holding = activeHolding();
   if (!holding) return renderEmptyMarket();
   if (holding.trackingType !== "market") return renderManualDetails(holding);
+  resetDetailPanels(true);
+  renderRangeControls();
 
   const market = marketFor(holding);
   if (!market) return renderEmptyMarket("Loading market performance and related articles...");
 
   const { quote, summary, history, news, errors } = market;
   const value = itemValue(holding);
+  const cost = itemCost(holding);
   elements.selectedTitle.textContent = `${holding.symbol}${holding.name ? ` · ${holding.name}` : ""}`;
   elements.selectedSummary.textContent = summary?.text || errors?.[0] || "Market data could not be loaded.";
   elements.lastPrice.textContent = quote?.price ? currency(quote.price) : currency(value || 0);
   elements.quoteMeta.textContent = quote ? `${quote.source} · ${quote.date} ${quote.time || ""}`.trim() : "Quote unavailable";
   setSignedMetric(elements.dayChange, summary?.dayChange);
   setSignedMetric(elements.weekChange, summary?.weekChange);
+  elements.metricTwoLabel.textContent = `${chartRanges.find((range) => range.id === state.chartRange)?.label || "Range"} move`;
   elements.sharesHeld.textContent = holding.quantityMode === "units" ? number(holding.units) : currency(holding.amount);
   elements.positionValue.textContent = Number.isFinite(value) ? currency(value) : "--";
+  elements.chartTitle.textContent = `${holding.symbol} price`;
+  elements.newsTitle.textContent = `${holding.symbol} news`;
   renderChart(history);
   renderNews(news);
+  if (cost) elements.quoteMeta.textContent += ` · Cost basis ${currency(cost)}`;
 }
 
 async function loadMarketFor(holding, force = false) {
   if (!holding?.symbol || holding.trackingType !== "market") return;
-  if (!force && state.markets.has(holding.symbol)) return;
-  const cacheBust = force ? `?t=${Date.now()}` : "";
-  const market = await api(`/api/market/${encodeURIComponent(holding.symbol)}${cacheBust}`);
-  state.markets.set(holding.symbol, market);
+  const key = marketKey(holding.symbol);
+  if (!force && state.markets.has(key)) return;
+  const params = new URLSearchParams({ range: state.chartRange });
+  if (force) params.set("t", Date.now());
+  const market = await api(`/api/market/${encodeURIComponent(holding.symbol)}?${params.toString()}`);
+  state.markets.set(key, market);
 }
 
 async function selectHolding(id, force = false) {
@@ -454,37 +613,53 @@ async function selectHolding(id, force = false) {
   }
 }
 
-function setTab(tab) {
+async function refreshActiveTab() {
+  if (state.activeTab === "dashboard") {
+    await Promise.allSettled(state.holdings.filter((holding) => holding.trackingType === "market").slice(0, 8).map((holding) => loadMarketFor(holding, true)));
+    renderDashboard();
+  } else if (state.selectedId) {
+    await selectHolding(state.selectedId, true);
+  }
+}
+
+function resetFormForTab(tab) {
+  elements.form.reset();
+  elements.categoryInput.value = tab;
+  elements.exchangeInput.value = "";
+  elements.quoteTypeInput.value = "";
+  clearSymbolResults();
+  renderQuantityMode();
+}
+
+async function setTab(tab) {
   const changedTabs = state.activeTab !== tab;
   state.activeTab = tab;
   renderTabs();
+  const category = activeCategory();
+  elements.sectionEyebrow.textContent = tab === "dashboard" ? "Main dashboard" : category.label;
+  elements.sectionTitle.textContent = category.label;
   elements.dashboardView.classList.toggle("hidden", tab !== "dashboard");
   elements.assetView.classList.toggle("hidden", tab === "dashboard");
+  clearSymbolResults();
 
   if (tab === "dashboard") {
     renderDashboard();
+    if (changedTabs) await refreshActiveTab();
     return;
   }
 
   renderAssetForm();
-  if (changedTabs) {
-    elements.form.reset();
-    elements.categoryInput.value = tab;
-    elements.exchangeInput.value = "";
-    elements.quoteTypeInput.value = "";
-    elements.symbolResults.hidden = true;
-    renderQuantityMode();
-  }
+  if (changedTabs) resetFormForTab(tab);
   const holdings = currentHoldings();
   if (!holdings.some((holding) => holding.id === state.selectedId)) state.selectedId = holdings[0]?.id || null;
   renderHoldings();
-  if (state.selectedId) selectHolding(state.selectedId);
+  if (state.selectedId) await selectHolding(state.selectedId, changedTabs && category.tracked);
   else renderEmptyMarket();
 }
 
 async function lookupSymbols(query) {
   if (!query || query.length < 1 || !activeCategory().tracked) {
-    elements.symbolResults.hidden = true;
+    clearSymbolResults();
     return;
   }
 
@@ -506,13 +681,13 @@ async function lookupSymbols(query) {
         elements.nameInput.value = result.name;
         elements.exchangeInput.value = result.exchange || "";
         elements.quoteTypeInput.value = result.quoteType || "";
-        elements.symbolResults.hidden = true;
+        clearSymbolResults();
       });
       elements.symbolResults.append(button);
     }
     elements.symbolResults.hidden = false;
   } catch {
-    elements.symbolResults.hidden = true;
+    clearSymbolResults();
   }
 }
 
@@ -520,7 +695,7 @@ async function loadHoldings() {
   state.holdings = (await api("/api/holdings")).map(normalizeHolding);
   await Promise.allSettled(state.holdings.filter((holding) => holding.trackingType === "market").slice(0, 8).map((holding) => loadMarketFor(holding)));
   renderTabs();
-  setTab(state.activeTab);
+  await setTab(state.activeTab);
 }
 
 elements.form.addEventListener("submit", async (event) => {
@@ -528,37 +703,33 @@ elements.form.addEventListener("submit", async (event) => {
   const formData = new FormData(elements.form);
   const payload = Object.fromEntries(formData.entries());
   payload.symbol = (payload.symbol || "").toUpperCase();
+  if (["cash", "credit", "loans"].includes(state.activeTab)) payload.quantityMode = "value";
   await api("/api/holdings", {
     method: "POST",
     body: JSON.stringify(payload)
   });
-  elements.form.reset();
-  elements.categoryInput.value = state.activeTab;
-  elements.exchangeInput.value = "";
-  elements.quoteTypeInput.value = "";
-  renderQuantityMode();
+  resetFormForTab(state.activeTab);
   await loadHoldings();
   const created = state.holdings.find((holding) => holding.category === state.activeTab && (holding.symbol === payload.symbol || holding.name === payload.name));
-  if (created) await selectHolding(created.id);
+  if (created) await selectHolding(created.id, true);
 });
 
 elements.quantityMode.addEventListener("change", renderQuantityMode);
+elements.costBasisMode.addEventListener("change", renderQuantityMode);
 
 elements.symbolInput.addEventListener("input", (event) => {
   window.clearTimeout(state.lookupTimer);
   state.lookupTimer = window.setTimeout(() => lookupSymbols(event.target.value.trim()), 250);
 });
 
-elements.refreshButton.addEventListener("click", async () => {
-  if (state.activeTab === "dashboard") {
-    await Promise.allSettled(state.holdings.filter((holding) => holding.trackingType === "market").map((holding) => loadMarketFor(holding, true)));
-    renderDashboard();
-  } else if (state.selectedId) {
-    await selectHolding(state.selectedId, true);
-  }
+document.addEventListener("click", (event) => {
+  if (!elements.symbolResults.contains(event.target) && event.target !== elements.symbolInput) clearSymbolResults();
 });
 
+elements.refreshButton.addEventListener("click", refreshActiveTab);
+
 renderTabs();
+renderRangeControls();
 renderQuantityMode();
 loadHoldings().catch((error) => {
   elements.dashboardView.classList.remove("hidden");
