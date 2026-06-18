@@ -11,6 +11,9 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 15 * 60 * 1000);
 
 const marketCache = new Map();
+const searchCache = new Map();
+
+const TRACKED_CATEGORIES = new Set(["stocks", "crypto", "commodities"]);
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -71,25 +74,67 @@ function cleanSymbol(input) {
   return String(input || "")
     .trim()
     .toUpperCase()
-    .replace(/[^A-Z0-9.-]/g, "");
+    .replace(/[^A-Z0-9.^=-]/g, "");
+}
+
+function cleanCategory(input) {
+  const value = String(input || "stocks").trim().toLowerCase();
+  return ["stocks", "crypto", "commodities", "alts", "credit", "loans", "cash"].includes(value) ? value : "stocks";
+}
+
+function makeId(input) {
+  return String(input || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
+}
+
+function normalizeHoldingRecord(input) {
+  const category = cleanCategory(input.category);
+  const symbol = cleanSymbol(input.symbol);
+  const name = String(input.name || "").trim();
+  const quantityMode = input.quantityMode === "value" ? "value" : "units";
+  const units = Number(input.units ?? input.shares ?? 0);
+  const amount = Number(input.amount ?? 0);
+  const totalCost = Number(input.totalCost ?? input.avgCost ?? 0);
+  const id = input.id || `${category}-${symbol || makeId(name) || Date.now()}`;
+
+  return {
+    id,
+    category,
+    symbol,
+    name,
+    exchange: String(input.exchange || "").trim(),
+    quoteType: String(input.quoteType || "").trim(),
+    trackingType: TRACKED_CATEGORIES.has(category) && symbol ? "market" : "manual",
+    quantityMode,
+    units: Number.isFinite(units) ? units : 0,
+    amount: Number.isFinite(amount) ? amount : 0,
+    totalCost: Number.isFinite(totalCost) ? totalCost : 0,
+    notes: String(input.notes || "").trim(),
+    updatedAt: input.updatedAt || new Date().toISOString(),
+    createdAt: input.createdAt
+  };
 }
 
 function normalizeHolding(input) {
+  const category = cleanCategory(input.category);
   const symbol = cleanSymbol(input.symbol);
-  if (!symbol) {
-    const err = new Error("A stock symbol is required.");
+  const name = String(input.name || "").trim();
+  if (TRACKED_CATEGORIES.has(category) && !symbol) {
+    const err = new Error("A ticker symbol is required.");
+    err.status = 400;
+    throw err;
+  }
+  if (!TRACKED_CATEGORIES.has(category) && !name) {
+    const err = new Error("A name is required for manually tracked assets.");
     err.status = 400;
     throw err;
   }
 
-  return {
-    symbol,
-    name: String(input.name || "").trim(),
-    shares: Number(input.shares || 0),
-    avgCost: Number(input.avgCost || 0),
-    notes: String(input.notes || "").trim(),
-    updatedAt: new Date().toISOString()
-  };
+  return normalizeHoldingRecord({ ...input, category, symbol, name, updatedAt: new Date().toISOString() });
 }
 
 function stooqSymbol(symbol) {
@@ -243,6 +288,31 @@ async function fetchNews(symbol) {
   return articles.filter((article) => article.title && article.link);
 }
 
+async function searchSymbols(query) {
+  const q = String(query || "").trim();
+  if (q.length < 1) return [];
+
+  const cached = searchCache.get(q.toLowerCase());
+  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) return cached.payload;
+
+  const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
+  const raw = await fetchText(url);
+  const parsed = JSON.parse(raw);
+  const payload = (parsed.quotes || [])
+    .filter((quote) => quote.symbol && quote.shortname)
+    .slice(0, 8)
+    .map((quote) => ({
+      symbol: cleanSymbol(quote.symbol),
+      name: quote.shortname || quote.longname || "",
+      exchange: quote.exchange || quote.exchDisp || "",
+      quoteType: quote.quoteType || "",
+      type: quote.typeDisp || quote.quoteType || ""
+    }));
+
+  searchCache.set(q.toLowerCase(), { createdAt: Date.now(), payload });
+  return payload;
+}
+
 function pctChange(current, previous) {
   if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return null;
   return ((current - previous) / previous) * 100;
@@ -313,25 +383,25 @@ async function handleApi(req, res, url) {
   }
 
   if (url.pathname === "/api/holdings" && req.method === "GET") {
-    return sendJson(res, 200, await readHoldings());
+    return sendJson(res, 200, (await readHoldings()).map(normalizeHoldingRecord));
   }
 
   if (url.pathname === "/api/holdings" && req.method === "POST") {
     const input = normalizeHolding(await readBody(req));
-    const holdings = await readHoldings();
-    const existing = holdings.findIndex((holding) => holding.symbol === input.symbol);
+    const holdings = (await readHoldings()).map(normalizeHoldingRecord);
+    const existing = holdings.findIndex((holding) => holding.id === input.id || (input.symbol && holding.category === input.category && holding.symbol === input.symbol));
     if (existing >= 0) holdings[existing] = { ...holdings[existing], ...input };
     else holdings.push({ ...input, createdAt: new Date().toISOString() });
-    await writeHoldings(holdings.sort((a, b) => a.symbol.localeCompare(b.symbol)));
+    await writeHoldings(holdings.sort((a, b) => a.category.localeCompare(b.category) || (a.symbol || a.name).localeCompare(b.symbol || b.name)));
     return sendJson(res, 200, holdings);
   }
 
   const holdingMatch = url.pathname.match(/^\/api\/holdings\/([^/]+)$/);
   if (holdingMatch && req.method === "PUT") {
-    const target = cleanSymbol(decodeURIComponent(holdingMatch[1]));
-    const input = normalizeHolding({ ...(await readBody(req)), symbol: target });
-    const holdings = await readHoldings();
-    const index = holdings.findIndex((holding) => holding.symbol === target);
+    const target = decodeURIComponent(holdingMatch[1]);
+    const input = normalizeHolding({ ...(await readBody(req)), id: target });
+    const holdings = (await readHoldings()).map(normalizeHoldingRecord);
+    const index = holdings.findIndex((holding) => holding.id === target || holding.symbol === cleanSymbol(target));
     if (index < 0) return sendJson(res, 404, { error: `No holding found for ${target}.` });
     holdings[index] = { ...holdings[index], ...input };
     await writeHoldings(holdings);
@@ -339,10 +409,15 @@ async function handleApi(req, res, url) {
   }
 
   if (holdingMatch && req.method === "DELETE") {
-    const target = cleanSymbol(decodeURIComponent(holdingMatch[1]));
-    const holdings = (await readHoldings()).filter((holding) => holding.symbol !== target);
+    const target = decodeURIComponent(holdingMatch[1]);
+    const cleanTarget = cleanSymbol(target);
+    const holdings = (await readHoldings()).map(normalizeHoldingRecord).filter((holding) => holding.id !== target && holding.symbol !== cleanTarget);
     await writeHoldings(holdings);
     return sendJson(res, 200, holdings);
+  }
+
+  if (url.pathname === "/api/search" && req.method === "GET") {
+    return sendJson(res, 200, await searchSymbols(url.searchParams.get("q")));
   }
 
   const marketMatch = url.pathname.match(/^\/api\/market\/([^/]+)$/);

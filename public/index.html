@@ -10,48 +10,126 @@
     <main class="shell">
       <section class="topbar">
         <div>
-          <p class="eyebrow">Self-hosted portfolio tracker</p>
+          <p class="eyebrow">Self-hosted finance hub</p>
           <h1>Finance Dashboard</h1>
         </div>
         <button id="refreshButton" class="secondary">Refresh market data</button>
       </section>
 
-      <section class="layout">
+      <nav id="assetTabs" class="tabs" aria-label="Finance sections"></nav>
+
+      <section id="dashboardView" class="dashboard-view">
+        <section class="hero-panel overview-hero">
+          <div>
+            <p class="eyebrow">Main dashboard</p>
+            <h2>Total tracked net worth</h2>
+            <p class="summary-copy">A live-at-home view of the assets and debts you type in here. Market-tracked assets update from public finance data; private items stay manual.</p>
+          </div>
+          <div class="quote-tile">
+            <span>Estimated total</span>
+            <strong id="totalNetWorth">--</strong>
+            <small id="totalMeta">Across all tabs</small>
+          </div>
+        </section>
+
+        <section class="metric-grid">
+          <article class="metric">
+            <span>Assets</span>
+            <strong id="assetTotal">--</strong>
+          </article>
+          <article class="metric">
+            <span>Debts</span>
+            <strong id="debtTotal">--</strong>
+          </article>
+          <article class="metric">
+            <span>Tracked positions</span>
+            <strong id="positionCount">--</strong>
+          </article>
+          <article class="metric">
+            <span>Market tracked</span>
+            <strong id="marketCount">--</strong>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Allocation</h2>
+              <p>Estimated value by category.</p>
+            </div>
+            <div id="allocationList" class="allocation-list"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Needs attention</h2>
+              <p>Assets missing values or market data.</p>
+            </div>
+            <div id="attentionList" class="news-list"></div>
+          </article>
+        </section>
+      </section>
+
+      <section id="assetView" class="layout hidden">
         <aside class="sidebar">
           <form id="holdingForm" class="panel">
             <div class="panel-header">
-              <h2>Add holding</h2>
-              <p>Type tickers manually now; account linking can come later.</p>
+              <h2 id="formTitle">Add holding</h2>
+              <p id="formHint">Use ticker lookup when available, or enter manual values for private assets.</p>
             </div>
-            <label>
+
+            <input name="category" type="hidden" value="stocks" />
+            <input name="exchange" type="hidden" />
+            <input name="quoteType" type="hidden" />
+
+            <label id="symbolField">
               Symbol
-              <input name="symbol" placeholder="AAPL" required />
+              <input name="symbol" autocomplete="off" placeholder="AAPL, BTC-USD, GC=F" required />
             </label>
+            <div id="symbolResults" class="symbol-results" hidden></div>
+
             <label>
               Name
-              <input name="name" placeholder="Apple Inc." />
+              <input name="name" placeholder="Auto-filled when possible" />
             </label>
-            <div class="field-grid">
+
+            <div id="quantityMode" class="segmented" role="group" aria-label="Holding amount type">
               <label>
-                Shares
-                <input name="shares" type="number" step="0.0001" min="0" placeholder="10" />
+                <input type="radio" name="quantityMode" value="units" checked />
+                <span id="unitsModeLabel">Shares / units</span>
               </label>
               <label>
-                Avg. cost
-                <input name="avgCost" type="number" step="0.01" min="0" placeholder="185.00" />
+                <input type="radio" name="quantityMode" value="value" />
+                <span>Total dollar amount</span>
               </label>
             </div>
+
+            <div class="field-grid">
+              <label id="unitsField">
+                <span id="unitsLabel">Shares / units</span>
+                <input name="units" type="number" step="0.00000001" min="0" placeholder="10.25" />
+              </label>
+              <label id="amountField" class="hidden">
+                Dollar amount
+                <input name="amount" type="number" step="0.01" min="0" placeholder="250.00" />
+              </label>
+              <label>
+                Cost basis
+                <input name="totalCost" type="number" step="0.01" min="0" placeholder="1850.00" />
+              </label>
+            </div>
+
             <label>
               Notes
-              <textarea name="notes" rows="3" placeholder="Why I own it, target allocation, watch items..."></textarea>
+              <textarea name="notes" rows="3" placeholder="Why I own it, payoff notes, appraisal notes, watch items..."></textarea>
             </label>
-            <button type="submit">Save holding</button>
+            <button type="submit">Save item</button>
           </form>
 
           <section class="panel holdings-panel">
             <div class="panel-header">
-              <h2>Holdings</h2>
-              <p id="holdingCount">No stocks yet</p>
+              <h2 id="listTitle">Holdings</h2>
+              <p id="holdingCount">No items yet</p>
             </div>
             <div id="holdingsList" class="holdings-list"></div>
           </section>
@@ -60,14 +138,14 @@
         <section class="dashboard">
           <section class="hero-panel">
             <div>
-              <p class="eyebrow">Selected stock</p>
-              <h2 id="selectedTitle">Add a holding to begin</h2>
-              <p id="selectedSummary" class="summary-copy">Your daily and weekly stock summary will appear here with current performance and recent article context.</p>
+              <p class="eyebrow" id="selectedEyebrow">Selected item</p>
+              <h2 id="selectedTitle">Add an item to begin</h2>
+              <p id="selectedSummary" class="summary-copy">Market performance, manual valuation notes, or debt details will appear here.</p>
             </div>
             <div class="quote-tile">
-              <span>Last price</span>
+              <span id="valueLabel">Estimated value</span>
               <strong id="lastPrice">--</strong>
-              <small id="quoteMeta">Waiting for a symbol</small>
+              <small id="quoteMeta">Waiting for an item</small>
             </div>
           </section>
 
@@ -81,11 +159,11 @@
               <strong id="weekChange">--</strong>
             </article>
             <article class="metric">
-              <span>Shares</span>
+              <span id="unitsHeldLabel">Shares / units</span>
               <strong id="sharesHeld">--</strong>
             </article>
             <article class="metric">
-              <span>Est. position</span>
+              <span>Position value</span>
               <strong id="positionValue">--</strong>
             </article>
           </section>
@@ -93,16 +171,16 @@
           <section class="content-grid">
             <article class="panel chart-panel">
               <div class="panel-header">
-                <h2>30-day price line</h2>
-                <p id="chartCaption">Select a holding to load price history.</p>
+                <h2 id="chartTitle">30-day price line</h2>
+                <p id="chartCaption">Select a market-tracked item to load price history.</p>
               </div>
               <svg id="priceChart" viewBox="0 0 640 220" role="img" aria-label="Price chart"></svg>
             </article>
 
             <article class="panel">
               <div class="panel-header">
-                <h2>Stock-specific news</h2>
-                <p id="newsCaption">Articles update when you select a holding.</p>
+                <h2 id="newsTitle">Related news</h2>
+                <p id="newsCaption">Articles update when market data is available.</p>
               </div>
               <div id="newsList" class="news-list"></div>
             </article>
@@ -113,8 +191,8 @@
 
     <template id="emptyStateTemplate">
       <div class="empty-state">
-        <strong>No holdings yet</strong>
-        <span>Add your first ticker on the left.</span>
+        <strong>No items yet</strong>
+        <span>Add your first entry from the form.</span>
       </div>
     </template>
 
