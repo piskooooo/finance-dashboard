@@ -4,7 +4,7 @@ const path = require("node:path");
 const { URL } = require("node:url");
 
 const PORT = Number(process.env.PORT || 3000);
-const HOST = process.env.HOST || "127.0.0.1";
+const HOST = process.env.HOST || "0.0.0.0";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const HOLDINGS_FILE = path.join(DATA_DIR, "holdings.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -120,8 +120,15 @@ function normalizeHoldingRecord(input) {
     institution: String(input.institution || "").trim(),
     accountUse: String(input.accountUse || "").trim(),
     accountType: String(input.accountType || "").trim(),
-    apy: Number(input.apy || 0),
+    apy: Number(input.apy || input.loanApy || 0),
     cardType: String(input.cardType || "").trim(),
+    minimumPayment: Number(input.minimumPayment || 0),
+    loanType: String(input.loanType || "").trim(),
+    paymentAmount: Number(input.paymentAmount || 0),
+    paymentsLeft: Number(input.paymentsLeft || 0),
+    nextDueDate: String(input.nextDueDate || "").trim(),
+    accountLocation: String(input.accountLocation || "").trim(),
+    tags: String(input.tags || "").trim(),
     notes: String(input.notes || "").trim(),
     updatedAt: input.updatedAt || new Date().toISOString(),
     createdAt: input.createdAt
@@ -298,7 +305,7 @@ async function fetchNews(symbol) {
   const articles = [];
   let match;
 
-  while ((match = itemRegex.exec(xml)) && articles.length < 6) {
+  while ((match = itemRegex.exec(xml)) && articles.length < 24) {
     const item = match[1];
     const field = (name) => {
       const found = item.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`));
@@ -312,7 +319,12 @@ async function fetchNews(symbol) {
     });
   }
 
-  return articles.filter((article) => article.title && article.link);
+  const today = new Date().toDateString();
+  return articles.filter((article) => {
+    if (!article.title || !article.link) return false;
+    if (!article.publishedAt) return true;
+    return new Date(article.publishedAt).toDateString() === today;
+  });
 }
 
 async function searchSymbols(query) {
@@ -471,7 +483,7 @@ async function serveStatic(req, res, url) {
     const ext = path.extname(filePath);
     res.writeHead(200, {
       "content-type": mimeTypes[ext] || "application/octet-stream",
-      "cache-control": ext === ".html" ? "no-store" : "public, max-age=300"
+      "cache-control": [".html", ".css", ".js"].includes(ext) ? "no-store" : "public, max-age=300"
     });
     res.end(content);
   } catch {

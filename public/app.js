@@ -30,6 +30,23 @@ const state = {
   chartRange: "24h"
 };
 
+const marketEvents = [
+  { date: "2026-06-19", title: "Market closed: Juneteenth", type: "Market holiday" },
+  { date: "2026-07-03", title: "Market closed: Independence Day observed", type: "Market holiday" },
+  { date: "2026-07-28", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2026-07-29", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2026-09-15", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2026-09-16", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2026-10-27", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2026-10-28", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2026-11-26", title: "Market closed: Thanksgiving", type: "Market holiday" },
+  { date: "2026-11-27", title: "Market early close", type: "Market holiday" },
+  { date: "2026-12-08", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2026-12-09", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2026-12-24", title: "Market early close", type: "Market holiday" },
+  { date: "2026-12-25", title: "Market closed: Christmas", type: "Market holiday" }
+];
+
 const elements = {
   tabs: document.querySelector("#assetTabs"),
   sectionEyebrow: document.querySelector("#sectionEyebrow"),
@@ -37,6 +54,7 @@ const elements = {
   dashboardView: document.querySelector("#dashboardView"),
   assetView: document.querySelector("#assetView"),
   form: document.querySelector("#holdingForm"),
+  idInput: document.querySelector('[name="id"]'),
   formTitle: document.querySelector("#formTitle"),
   formHint: document.querySelector("#formHint"),
   symbolField: document.querySelector("#symbolField"),
@@ -64,6 +82,8 @@ const elements = {
   costTotalLabel: document.querySelector("#costTotalLabel"),
   cashFields: document.querySelector("#cashFields"),
   creditFields: document.querySelector("#creditFields"),
+  loanFields: document.querySelector("#loanFields"),
+  saveButton: document.querySelector("#saveButton"),
   holdingsList: document.querySelector("#holdingsList"),
   holdingCount: document.querySelector("#holdingCount"),
   listTitle: document.querySelector("#listTitle"),
@@ -102,7 +122,11 @@ const elements = {
   positionCount: document.querySelector("#positionCount"),
   marketCount: document.querySelector("#marketCount"),
   allocationList: document.querySelector("#allocationList"),
-  attentionList: document.querySelector("#attentionList")
+  allocationChart: document.querySelector("#allocationChart"),
+  categoryPie: document.querySelector("#categoryPie"),
+  attentionList: document.querySelector("#attentionList"),
+  marketCalendar: document.querySelector("#marketCalendar"),
+  upcomingEvents: document.querySelector("#upcomingEvents")
 };
 
 function currency(value, code = "USD") {
@@ -158,6 +182,13 @@ function normalizeHolding(holding) {
     accountType: holding.accountType || "",
     apy: Number(holding.apy || 0),
     cardType: holding.cardType || "",
+    minimumPayment: Number(holding.minimumPayment || 0),
+    loanType: holding.loanType || "",
+    paymentAmount: Number(holding.paymentAmount || 0),
+    paymentsLeft: Number(holding.paymentsLeft || 0),
+    nextDueDate: holding.nextDueDate || "",
+    accountLocation: holding.accountLocation || "",
+    tags: holding.tags || "",
     notes: holding.notes || ""
   };
 }
@@ -215,6 +246,93 @@ function emptyState(title, text) {
   return empty;
 }
 
+function piePath(cx, cy, r, start, end) {
+  const startX = cx + r * Math.cos(start);
+  const startY = cy + r * Math.sin(start);
+  const endX = cx + r * Math.cos(end);
+  const endY = cy + r * Math.sin(end);
+  const large = end - start > Math.PI ? 1 : 0;
+  return `M ${cx} ${cy} L ${startX} ${startY} A ${r} ${r} 0 ${large} 1 ${endX} ${endY} Z`;
+}
+
+function renderPie(svg, rows) {
+  svg.innerHTML = "";
+  const cleanRows = rows.filter((row) => Number.isFinite(row.value) && row.value > 0);
+  const total = cleanRows.reduce((sum, row) => sum + row.value, 0);
+  if (!total) {
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", "110");
+    text.setAttribute("y", "112");
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("class", "pie-empty");
+    text.textContent = "No values";
+    svg.append(text);
+    return;
+  }
+
+  const colors = ["#74b784", "#4f8f62", "#8bbf92", "#c8d7ca", "#789080", "#e18a68", "#7ca7d8"];
+  if (cleanRows.length === 1) {
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", "110");
+    circle.setAttribute("cy", "110");
+    circle.setAttribute("r", "92");
+    circle.setAttribute("fill", colors[0]);
+    circle.setAttribute("stroke", "#080a09");
+    circle.setAttribute("stroke-width", "2");
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = `${cleanRows[0].label}: ${currency(cleanRows[0].value)}`;
+    circle.append(title);
+    svg.append(circle);
+    return;
+  }
+
+  let angle = -Math.PI / 2;
+  cleanRows.forEach((row, index) => {
+    const next = angle + (row.value / total) * Math.PI * 2;
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", piePath(110, 110, 92, angle, next));
+    path.setAttribute("fill", colors[index % colors.length]);
+    path.setAttribute("stroke", "#080a09");
+    path.setAttribute("stroke-width", "2");
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = `${row.label}: ${currency(row.value)}`;
+    path.append(title);
+    svg.append(path);
+    angle = next;
+  });
+}
+
+function isMarketClosed(date) {
+  const day = date.getDay();
+  if (day === 0 || day === 6) return "Weekend";
+  const iso = date.toISOString().slice(0, 10);
+  const event = marketEvents.find((item) => item.date === iso && item.title.includes("closed"));
+  return event?.title.replace("Market closed: ", "") || "";
+}
+
+function renderCalendar() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  const monthName = first.toLocaleString("en-US", { month: "long", year: "numeric" });
+  const cells = [];
+  for (let i = 0; i < first.getDay(); i += 1) cells.push("<span></span>");
+  for (let day = 1; day <= last.getDate(); day += 1) {
+    const date = new Date(year, month, day);
+    const iso = date.toISOString().slice(0, 10);
+    const closed = isMarketClosed(date);
+    const events = marketEvents.filter((event) => event.date === iso);
+    cells.push(`<button type="button" class="calendar-day${closed ? " closed" : ""}${events.length ? " has-event" : ""}" title="${closed || events.map((event) => event.title).join(", ")}"><strong>${day}</strong><span>${closed ? "Closed" : events[0]?.type || ""}</span></button>`);
+  }
+  elements.marketCalendar.innerHTML = `<div class="calendar-title">${monthName}</div><div class="calendar-weekdays"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div><div class="calendar-grid">${cells.join("")}</div>`;
+
+  const todayIso = today.toISOString().slice(0, 10);
+  const upcoming = marketEvents.filter((event) => event.date >= todayIso).slice(0, 6);
+  elements.upcomingEvents.innerHTML = upcoming.map((event) => `<button type="button" class="event-row"><strong>${event.title}</strong><span>${event.type} · ${new Date(`${event.date}T12:00:00`).toLocaleDateString()}</span></button>`).join("");
+}
+
 function clearSymbolResults() {
   window.clearTimeout(state.lookupTimer);
   elements.symbolResults.innerHTML = "";
@@ -255,6 +373,13 @@ function renderDashboard() {
   const debts = rows.filter((row) => Number.isFinite(row.value) && row.value < 0).reduce((sum, row) => sum + Math.abs(row.value), 0);
   const net = assets - debts;
   const marketItems = state.holdings.filter((holding) => holding.trackingType === "market").length;
+  const marketRows = state.holdings
+    .filter((holding) => holding.trackingType === "market")
+    .map((holding) => ({ value: itemValue(holding), change: marketFor(holding)?.summary?.dayChange }))
+    .filter((row) => Number.isFinite(row.value) && Number.isFinite(row.change));
+  const marketValue = marketRows.reduce((sum, row) => sum + row.value, 0);
+  const weightedMove = marketValue ? marketRows.reduce((sum, row) => sum + row.value * row.change, 0) / marketValue : 0;
+  document.body.dataset.theme = weightedMove <= -1 ? "red" : weightedMove > 0 ? "green" : "blue";
 
   elements.totalNetWorth.textContent = currency(net);
   elements.assetTotal.textContent = currency(assets);
@@ -262,8 +387,17 @@ function renderDashboard() {
   elements.positionCount.textContent = number(state.holdings.length, 0);
   elements.marketCount.textContent = number(marketItems, 0);
   elements.totalMeta.textContent = `${state.holdings.length} total item${state.holdings.length === 1 ? "" : "s"}`;
+  renderPie(elements.allocationChart, categories
+    .filter((category) => category.id !== "dashboard")
+    .map((category) => ({
+      label: category.label,
+      value: state.holdings
+        .filter((holding) => holding.category === category.id)
+        .reduce((sum, holding) => sum + Math.abs(signedValue(holding) || 0), 0)
+    })));
   renderAllocation();
   renderAttention();
+  renderCalendar();
 }
 
 function renderAllocation() {
@@ -309,9 +443,14 @@ function renderAttention() {
   }
 
   for (const holding of needs) {
-    const row = document.createElement("div");
+    const row = document.createElement("button");
+    row.type = "button";
     row.className = "news-item";
     row.innerHTML = `<strong>${holding.symbol || holding.name}</strong><span class="news-meta">${categoryMap[holding.category].label} needs a value or quote.</span>`;
+    row.addEventListener("click", async () => {
+      await setTab(holding.category);
+      await selectHolding(holding.id);
+    });
     elements.attentionList.append(row);
   }
 }
@@ -320,22 +459,33 @@ function setFieldVisibility(category) {
   const isTracked = category.tracked;
   const isCash = category.id === "cash";
   const isCredit = category.id === "credit";
+  const isLoan = category.id === "loans";
   const isDebt = category.id === "loans" || isCredit;
 
   elements.symbolField.classList.toggle("hidden", !isTracked);
   elements.symbolInput.required = isTracked;
   elements.cashFields.classList.toggle("hidden", !isCash);
   elements.creditFields.classList.toggle("hidden", !isCredit);
-  elements.quantityMode.classList.toggle("hidden", isCash || isCredit || category.id === "loans");
+  elements.loanFields.classList.toggle("hidden", !isLoan);
+  setGroupEnabled(elements.cashFields, isCash);
+  setGroupEnabled(elements.creditFields, isCredit);
+  setGroupEnabled(elements.loanFields, isLoan);
+  elements.quantityMode.classList.toggle("hidden", isCash || isCredit || isLoan);
   elements.costBasisMode.classList.toggle("hidden", !isTracked);
   elements.costPerUnitField.classList.toggle("hidden", !isTracked || new FormData(elements.form).get("costBasisMode") === "total");
-  elements.costTotalField.classList.toggle("hidden", isCash || isCredit || category.id === "loans" || (isTracked && new FormData(elements.form).get("costBasisMode") !== "total"));
-  elements.unitsField.classList.toggle("hidden", isCash || isCredit || category.id === "loans" || new FormData(elements.form).get("quantityMode") !== "units");
+  elements.costTotalField.classList.toggle("hidden", isCash || isCredit || isLoan || (isTracked && new FormData(elements.form).get("costBasisMode") !== "total"));
+  elements.unitsField.classList.toggle("hidden", isCash || isCredit || isLoan || new FormData(elements.form).get("quantityMode") !== "units");
   elements.amountField.classList.toggle("hidden", isTracked && new FormData(elements.form).get("quantityMode") !== "value");
 
   elements.amountLabel.textContent = isDebt ? "Total owed" : isCash ? "Current balance" : "Total dollar amount";
   elements.nameLabel.textContent = isCash ? "Account nickname" : isCredit ? "Card name" : category.id === "loans" ? "Loan name" : "Name";
   elements.amountModeLabel.textContent = isDebt ? "Total owed" : "Total dollar amount";
+}
+
+function setGroupEnabled(group, enabled) {
+  group.querySelectorAll("input, select, textarea").forEach((field) => {
+    field.disabled = !enabled;
+  });
 }
 
 function renderAssetForm() {
@@ -364,6 +514,46 @@ function renderQuantityMode() {
   setFieldVisibility(activeCategory());
 }
 
+function setFormValue(name, value) {
+  const field = elements.form.elements[name];
+  if (!field) return;
+  field.value = value ?? "";
+}
+
+function populateForm(holding) {
+  if (holding.category !== state.activeTab) return;
+  elements.idInput.value = holding.id;
+  setFormValue("symbol", holding.symbol);
+  setFormValue("name", holding.name);
+  setFormValue("exchange", holding.exchange);
+  setFormValue("quoteType", holding.quoteType);
+  setFormValue("quantityMode", holding.quantityMode);
+  setFormValue("units", holding.units || "");
+  setFormValue("amount", holding.amount || "");
+  setFormValue("costBasisMode", holding.costBasisMode);
+  setFormValue("costPerUnit", holding.costPerUnit || "");
+  setFormValue("totalCost", holding.totalCost || "");
+  setFormValue("currency", holding.currency || "USD");
+  setFormValue("institution", holding.institution);
+  setFormValue("accountUse", holding.accountUse || "personal");
+  setFormValue("accountType", holding.accountType || "checking");
+  setFormValue("apy", holding.apy || "");
+  setFormValue("loanApy", holding.apy || "");
+  setFormValue("cardType", holding.cardType || "credit");
+  setFormValue("minimumPayment", holding.minimumPayment || "");
+  setFormValue("loanType", holding.loanType || "auto");
+  setFormValue("paymentAmount", holding.paymentAmount || "");
+  setFormValue("paymentsLeft", holding.paymentsLeft || "");
+  setFormValue("nextDueDate", holding.nextDueDate);
+  setFormValue("accountLocation", holding.accountLocation);
+  setFormValue("tags", holding.tags);
+  setFormValue("notes", holding.notes);
+  elements.saveButton.textContent = "Update item";
+  clearSymbolResults();
+  renderQuantityMode();
+  elements.form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function renderHoldings() {
   const category = activeCategory();
   const holdings = currentHoldings();
@@ -371,9 +561,15 @@ function renderHoldings() {
   elements.holdingCount.textContent = holdings.length ? `${holdings.length} item${holdings.length === 1 ? "" : "s"}` : `No ${category.label.toLowerCase()} yet`;
 
   if (!holdings.length) {
+    renderPie(elements.categoryPie, []);
     elements.holdingsList.append(emptyState(`No ${category.label.toLowerCase()} yet`, "Add the first one above."));
     return;
   }
+
+  renderPie(elements.categoryPie, holdings.map((holding) => ({
+    label: holding.symbol || holding.name,
+    value: Math.abs(signedValue(holding) || 0)
+  })));
 
   for (const holding of holdings) {
     const row = document.createElement("div");
@@ -399,7 +595,17 @@ function renderHoldings() {
       await loadHoldings();
     });
 
-    row.append(button, remove);
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "secondary compact";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", () => populateForm(holding));
+
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    actions.append(edit, remove);
+
+    row.append(button, actions);
     elements.holdingsList.append(row);
   }
 }
@@ -465,21 +671,35 @@ function renderChart(history) {
 }
 
 function renderNews(news) {
-  const items = (news || []).slice(0, 6);
+  const items = news || [];
   elements.newsList.innerHTML = "";
   elements.newsCaption.textContent = items.length ? `${items.length} recent articles` : "No articles returned.";
   if (!items.length) {
     elements.newsList.append(emptyState("No news found", "Try refreshing later or confirm the ticker symbol."));
     return;
   }
-  for (const article of items) {
+
+  const addArticle = (article, extra = false) => {
     const link = document.createElement("a");
-    link.className = "news-item";
+    link.className = `news-item${extra ? " extra-news hidden" : ""}`;
     link.href = article.link;
     link.target = "_blank";
     link.rel = "noreferrer";
     link.innerHTML = `<strong>${article.title}</strong><span class="news-meta">${article.source || "Yahoo Finance"}${article.publishedAt ? ` · ${new Date(article.publishedAt).toLocaleString()}` : ""}</span>`;
     elements.newsList.append(link);
+  };
+
+  items.forEach((article, index) => addArticle(article, index >= 2));
+  if (items.length > 2) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "secondary";
+    more.textContent = `Show ${items.length - 2} more`;
+    more.addEventListener("click", () => {
+      elements.newsList.querySelectorAll(".extra-news").forEach((node) => node.classList.remove("hidden"));
+      more.remove();
+    });
+    elements.newsList.append(more);
   }
 }
 
@@ -488,9 +708,10 @@ function creditEstimate(holding) {
   const apr = Math.max(holding.apy || 0, 0);
   if (!balance) return { minimum: 0, months: 0, interest: 0 };
   if (holding.cardType === "charge") return { minimum: balance, months: 1, interest: 0 };
-  const minimum = Math.max(balance * 0.02, 25);
-  if (apr === 0) return { minimum, months: Math.ceil(balance / minimum), interest: 0 };
   const monthlyRate = apr / 100 / 12;
+  const minimum = holding.minimumPayment > 0 ? holding.minimumPayment : Math.max(balance * 0.03, 25, balance * monthlyRate + balance * 0.01);
+  if (apr > 0 && minimum <= balance * monthlyRate) return { minimum, months: Infinity, interest: Infinity };
+  if (apr === 0) return { minimum, months: Math.ceil(balance / minimum), interest: 0 };
   let current = balance;
   let months = 0;
   let interest = 0;
@@ -529,18 +750,35 @@ function renderManualDetails(holding) {
       detailRow("Account type", holding.accountType),
       detailRow("Personal / business", holding.accountUse),
       detailRow("Currency", holding.currency),
-      detailRow("Balance", currency(value, holding.currency))
+      detailRow("Balance", currency(value, holding.currency)),
+      detailRow("Location / account", holding.accountLocation),
+      detailRow("Tags", holding.tags)
     ];
   } else if (holding.category === "credit") {
     const estimate = creditEstimate(holding);
     elements.dayChange.textContent = currency(estimate.minimum, holding.currency);
-    elements.weekChange.textContent = estimate.months ? `${estimate.months} mo` : "--";
+    elements.weekChange.textContent = estimate.months === Infinity ? "No payoff" : estimate.months ? `${estimate.months} mo` : "--";
     rows = [
       detailRow("Card type", holding.cardType === "charge" ? "Charge card" : "Credit card"),
       detailRow("APR", `${number(holding.apy, 2)}%`),
       detailRow("Estimated minimum", currency(estimate.minimum, holding.currency)),
-      detailRow("Minimum-only payoff", estimate.months ? `${estimate.months} months` : "--"),
-      detailRow("Estimated interest", currency(estimate.interest, holding.currency))
+      detailRow("Minimum-only payoff", estimate.months === Infinity ? "Minimum is below monthly interest" : estimate.months ? `${estimate.months} months` : "--"),
+      detailRow("Estimated interest", estimate.interest === Infinity ? "Balance will grow" : currency(estimate.interest, holding.currency)),
+      detailRow("Location / account", holding.accountLocation),
+      detailRow("Tags", holding.tags)
+    ];
+  } else if (holding.category === "loans") {
+    elements.dayChange.textContent = holding.loanType || "--";
+    elements.weekChange.textContent = holding.apy ? `${number(holding.apy, 2)}%` : "--";
+    rows = [
+      detailRow("Loan type", holding.loanType),
+      detailRow("Balance", currency(value, holding.currency)),
+      detailRow("APR", holding.apy ? `${number(holding.apy, 2)}%` : "--"),
+      detailRow("Payment amount", holding.paymentAmount ? currency(holding.paymentAmount, holding.currency) : "--"),
+      detailRow("Payments left", holding.paymentsLeft ? number(holding.paymentsLeft, 0) : "--"),
+      detailRow("Next due date", holding.nextDueDate),
+      detailRow("Location / account", holding.accountLocation),
+      detailRow("Tags", holding.tags)
     ];
   } else {
     const cost = itemCost(holding);
@@ -550,6 +788,8 @@ function renderManualDetails(holding) {
       detailRow("Category", category.label),
       detailRow("Value", currency(value, holding.currency)),
       detailRow("Cost basis", cost ? currency(cost, holding.currency) : "--"),
+      detailRow("Location / account", holding.accountLocation),
+      detailRow("Tags", holding.tags),
       detailRow("Notes", holding.notes)
     ];
   }
@@ -624,6 +864,8 @@ async function refreshActiveTab() {
 
 function resetFormForTab(tab) {
   elements.form.reset();
+  elements.idInput.value = "";
+  elements.saveButton.textContent = "Save item";
   elements.categoryInput.value = tab;
   elements.exchangeInput.value = "";
   elements.quoteTypeInput.value = "";
