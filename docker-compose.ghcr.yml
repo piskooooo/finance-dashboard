@@ -10,5 +10,7 @@ services:
       PORT: 3000
       DATA_DIR: /app/data
       CACHE_TTL_MS: ${CACHE_TTL_MS:-900000}
+      PUID: ${PUID:-99}
+      PGID: ${PGID:-100}
     volumes:
       - ${DATA_PATH:-./data}:/app/data

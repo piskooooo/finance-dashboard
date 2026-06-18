@@ -50,6 +50,8 @@ APP_PORT=3000
 DATA_PATH=/mnt/user/appdata/finance-dashboard/data
 IMAGE_NAME=ghcr.io/piskooooo/finance-dashboard:latest
 CACHE_TTL_MS=900000
+PUID=99
+PGID=100
 ```
 
 ## Unraid notes
@@ -65,6 +67,7 @@ For Unraid, the cleanest setup is:
 2. Put your `.env` file and either Compose file there.
 3. Use the GHCR Compose file if you want the NAS to pull your published image instead of building locally.
 4. Keep `DATA_PATH=/mnt/user/appdata/finance-dashboard/data` so your typed holdings survive container updates.
+5. Use `PUID=99` and `PGID=100` on Unraid unless you intentionally run appdata as a different user/group.
 
 The container exposes port `3000` internally. Change `APP_PORT` if port 3000 is already used on your NAS.
 
