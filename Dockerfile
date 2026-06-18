@@ -8,10 +8,11 @@ LABEL org.opencontainers.image.description="Self-hosted dashboard for manually t
 COPY --chown=node:node package.json server.js ./
 COPY --chown=node:node public ./public
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN apk add --no-cache su-exec \
+RUN apk add --no-cache libcap su-exec \
   && mkdir -p /app/data \
   && chown -R node:node /app \
-  && chmod +x /usr/local/bin/docker-entrypoint.sh
+  && chmod +x /usr/local/bin/docker-entrypoint.sh \
+  && setcap 'cap_net_bind_service=+ep' /usr/local/bin/node
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0

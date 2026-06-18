@@ -69,7 +69,7 @@ For Unraid, the cleanest setup is:
 4. Keep `DATA_PATH=/mnt/user/appdata/finance-dashboard/data` so your typed holdings survive container updates.
 5. Use `PUID=99` and `PGID=100` on Unraid unless you intentionally run appdata as a different user/group.
 
-The container exposes port `3000` internally. Change `APP_PORT` if port 3000 is already used on your NAS.
+The container exposes port `3000` internally by default. If your Unraid template is easier to set up as `9999:80`, set `PORT=80`; the image supports binding to port 80 while still running the app as `PUID:PGID`.
 
 ## GitHub setup
 
