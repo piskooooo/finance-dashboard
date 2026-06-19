@@ -84,6 +84,7 @@ const elements = {
   creditFields: document.querySelector("#creditFields"),
   loanFields: document.querySelector("#loanFields"),
   altFields: document.querySelector("#altFields"),
+  accountLocationField: document.querySelector("#accountLocationField"),
   saveButton: document.querySelector("#saveButton"),
   clearSelectionButton: document.querySelector("#clearSelectionButton"),
   holdingsList: document.querySelector("#holdingsList"),
@@ -500,6 +501,7 @@ function setFieldVisibility(category) {
   const isLoan = category.id === "loans";
   const isAlt = category.id === "alts";
   const isDebt = category.id === "loans" || isCredit;
+  const canUseLocation = isTracked || isAlt;
 
   elements.symbolField.classList.toggle("hidden", !isTracked);
   elements.symbolInput.required = isTracked;
@@ -517,6 +519,8 @@ function setFieldVisibility(category) {
   elements.costTotalField.classList.toggle("hidden", isCash || isCredit || isLoan || (isTracked && new FormData(elements.form).get("costBasisMode") !== "total"));
   elements.unitsField.classList.toggle("hidden", isCash || isCredit || isLoan || new FormData(elements.form).get("quantityMode") !== "units");
   elements.amountField.classList.toggle("hidden", isTracked && new FormData(elements.form).get("quantityMode") !== "value");
+  elements.accountLocationField.classList.toggle("hidden", !canUseLocation);
+  elements.form.elements.accountLocation.disabled = !canUseLocation;
 
   elements.amountLabel.textContent = isDebt ? "Total owed" : isCash ? "Current balance" : "Total dollar amount";
   elements.nameLabel.textContent = isCash ? "Account nickname" : isCredit ? "Card name" : category.id === "loans" ? "Loan name" : isAlt ? "Item name" : "Name";
@@ -828,7 +832,6 @@ function renderManualDetails(holding) {
       detailRow("Personal / business", holding.accountUse),
       detailRow("Currency", holding.currency),
       detailRow("Balance", currency(value, holding.currency)),
-      detailRow("Location / account", holding.accountLocation),
       detailRow("Tags", holding.tags)
     ];
   } else if (holding.category === "credit") {
@@ -841,7 +844,6 @@ function renderManualDetails(holding) {
       detailRow("Estimated minimum", currency(estimate.minimum, holding.currency)),
       detailRow("Minimum-only payoff", estimate.months === Infinity ? "Minimum is below monthly interest" : estimate.months ? `${estimate.months} months` : "--"),
       detailRow("Estimated interest", estimate.interest === Infinity ? "Balance will grow" : currency(estimate.interest, holding.currency)),
-      detailRow("Location / account", holding.accountLocation),
       detailRow("Tags", holding.tags)
     ];
   } else if (holding.category === "loans") {
@@ -854,7 +856,6 @@ function renderManualDetails(holding) {
       detailRow("Payment amount", holding.paymentAmount ? currency(holding.paymentAmount, holding.currency) : "--"),
       detailRow("Payments left", holding.paymentsLeft ? number(holding.paymentsLeft, 0) : "--"),
       detailRow("Next due date", holding.nextDueDate),
-      detailRow("Location / account", holding.accountLocation),
       detailRow("Tags", holding.tags)
     ];
   } else {

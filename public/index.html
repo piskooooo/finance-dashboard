@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Finance Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260619-1" />
+    <link rel="stylesheet" href="/styles.css?v=20260619-2" />
   </head>
   <body>
     <main class="app-shell">
@@ -25,17 +25,26 @@
           <button id="refreshButton" class="secondary">Refresh market data</button>
         </section>
 
-        <section id="dashboardView" class="dashboard-view">
+          <section id="dashboardView" class="dashboard-view">
           <section class="hero-panel overview-hero">
             <div>
               <p class="eyebrow">Overview</p>
               <h2>Total tracked net worth</h2>
               <p class="summary-copy">Market-tracked assets update from public finance data. Cash, debt, and private assets stay manual.</p>
             </div>
-            <div class="quote-tile">
-              <span>Estimated total</span>
-              <strong id="totalNetWorth">--</strong>
-              <small id="totalMeta">Across all sections</small>
+            <div class="overview-side">
+              <div class="quote-tile">
+                <span>Estimated total</span>
+                <strong id="totalNetWorth">--</strong>
+                <small id="totalMeta">Across all sections</small>
+              </div>
+              <div class="attention-compact">
+                <div>
+                  <h3>Needs attention</h3>
+                  <p>Missing values or market data.</p>
+                </div>
+                <div id="attentionList" class="news-list compact-news"></div>
+              </div>
             </div>
           </section>
 
@@ -48,14 +57,6 @@
               <span>Debts</span>
               <strong id="debtTotal">--</strong>
             </article>
-            <article class="metric">
-              <span>Tracked positions</span>
-              <strong id="positionCount">--</strong>
-            </article>
-            <article class="metric">
-              <span>Market tracked</span>
-              <strong id="marketCount">--</strong>
-            </article>
           </section>
 
           <section class="dashboard-grid">
@@ -64,45 +65,55 @@
                 <h2>Allocation</h2>
                 <p>Estimated value by category.</p>
               </div>
+              <div class="allocation-stats">
+                <div>
+                  <span>Tracked positions</span>
+                  <strong id="positionCount">--</strong>
+                </div>
+                <div>
+                  <span>Market tracked</span>
+                  <strong id="marketCount">--</strong>
+                </div>
+              </div>
               <svg id="allocationChart" class="pie-chart" viewBox="0 0 220 220" role="img" aria-label="Portfolio allocation chart"></svg>
               <div id="allocationList" class="allocation-list"></div>
             </article>
 
-            <article class="panel">
+            <article class="panel budget-panel">
               <div class="panel-header">
-                <h2>Needs attention</h2>
-                <p>Assets missing values or market data.</p>
+                <h2>Auto budget</h2>
+                <p>Minimum monthly debt payments to set aside.</p>
               </div>
-              <div id="attentionList" class="news-list"></div>
+              <div class="budget-total">
+                <span>Monthly minimum</span>
+                <strong id="budgetMinimum">--</strong>
+              </div>
+              <div id="budgetList" class="detail-list compact-list"></div>
             </article>
 
-            <aside class="dashboard-side">
-              <article class="panel budget-panel">
-                <div class="panel-header">
-                  <h2>Auto budget</h2>
-                  <p>Minimum monthly debt payments to set aside.</p>
-                </div>
-                <div class="budget-total">
-                  <span>Monthly minimum</span>
-                  <strong id="budgetMinimum">--</strong>
-                </div>
-                <div id="budgetList" class="detail-list compact-list"></div>
-              </article>
-
-              <article class="panel calendar-panel">
-                <div class="panel-header">
-                  <h2>Market calendar</h2>
-                  <p>Closed market days and upcoming events.</p>
-                </div>
-                <div id="marketCalendar" class="market-calendar"></div>
-                <div id="upcomingEvents" class="event-list"></div>
-              </article>
-            </aside>
+            <article class="panel calendar-panel">
+              <div class="panel-header">
+                <h2>Market calendar</h2>
+                <p>Closed market days and upcoming events.</p>
+              </div>
+              <div id="marketCalendar" class="market-calendar"></div>
+              <div id="upcomingEvents" class="event-list"></div>
+            </article>
           </section>
         </section>
 
         <section id="assetView" class="layout hidden">
           <aside class="sidebar">
+            <section class="panel holdings-panel">
+              <div class="panel-header">
+                <h2 id="listTitle">Holdings</h2>
+                <p id="holdingCount">No items yet</p>
+              </div>
+              <button id="clearSelectionButton" class="secondary clear-selection" type="button">View all</button>
+              <svg id="categoryPie" class="pie-chart mini-pie" viewBox="0 0 220 220" role="img" aria-label="Category allocation chart"></svg>
+              <div id="holdingsList" class="holdings-list"></div>
+            </section>
+
             <form id="holdingForm" class="panel">
               <div class="panel-header">
                 <h2 id="formTitle">Add holding</h2>
@@ -268,7 +279,7 @@
                 <textarea name="notes" rows="3" placeholder="Why I own it, payoff notes, appraisal notes, watch items..."></textarea>
               </label>
               <div class="field-grid">
-                <label>
+                <label id="accountLocationField">
                   Location / account
                   <input name="accountLocation" placeholder="M1 Pie, Vanguard 401k, Coinbase, MetaMask..." />
                 </label>
@@ -279,16 +290,6 @@
               </div>
               <button id="saveButton" type="submit">Save item</button>
             </form>
-
-            <section class="panel holdings-panel">
-              <div class="panel-header">
-                <h2 id="listTitle">Holdings</h2>
-                <p id="holdingCount">No items yet</p>
-              </div>
-              <button id="clearSelectionButton" class="secondary clear-selection" type="button">View all</button>
-              <svg id="categoryPie" class="pie-chart mini-pie" viewBox="0 0 220 220" role="img" aria-label="Category allocation chart"></svg>
-              <div id="holdingsList" class="holdings-list"></div>
-            </section>
           </aside>
 
           <section class="dashboard">
@@ -366,6 +367,6 @@
       </div>
     </template>
 
-    <script src="/app.js?v=20260619-1"></script>
+    <script src="/app.js?v=20260619-2"></script>
   </body>
 </html>
