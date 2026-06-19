@@ -20,6 +20,7 @@ const chartRanges = [
 ];
 
 const categoryMap = Object.fromEntries(categories.map((category) => [category.id, category]));
+const pieColors = ["var(--brand)", "var(--brand-strong)", "#d5d8d6", "#9da4a0", "#686f6b", "var(--negative)", "#7ca7d8"];
 
 const state = {
   holdings: [],
@@ -311,13 +312,12 @@ function renderPie(svg, rows) {
     return;
   }
 
-  const colors = ["var(--brand)", "var(--brand-strong)", "#d5d8d6", "#9da4a0", "#686f6b", "var(--negative)", "#7ca7d8"];
   if (cleanRows.length === 1) {
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("cx", "110");
     circle.setAttribute("cy", "110");
     circle.setAttribute("r", "92");
-    circle.setAttribute("fill", colors[0]);
+    circle.setAttribute("fill", cleanRows[0].color || pieColors[0]);
     circle.setAttribute("stroke", "#080a09");
     circle.setAttribute("stroke-width", "2");
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
@@ -332,7 +332,7 @@ function renderPie(svg, rows) {
     const next = angle + (row.value / total) * Math.PI * 2;
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", piePath(110, 110, 92, angle, next));
-    path.setAttribute("fill", colors[index % colors.length]);
+    path.setAttribute("fill", row.color || pieColors[index % pieColors.length]);
     path.setAttribute("stroke", "#080a09");
     path.setAttribute("stroke-width", "2");
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
@@ -450,8 +450,9 @@ function renderDashboard() {
   elements.totalMeta.textContent = `${state.holdings.length} total item${state.holdings.length === 1 ? "" : "s"}`;
   renderPie(elements.allocationChart, categories
     .filter((category) => category.id !== "dashboard")
-    .map((category) => ({
+    .map((category, index) => ({
       label: category.label,
+      color: pieColors[index % pieColors.length],
       value: state.holdings
         .filter((holding) => holding.category === category.id)
         .reduce((sum, holding) => sum + Math.abs(signedValue(holding) || 0), 0)
@@ -519,7 +520,7 @@ function renderSummaryDetails() {
     detailRows = [
       { label: "Assets", value: assetTotal, category: "dashboard" },
       { label: "Debts", value: debtTotal, category: "dashboard" },
-      { label: "Estimated total", value: assetTotal - debtTotal, category: "dashboard" },
+      { label: "Est net worth", value: assetTotal - debtTotal, category: "dashboard" },
       { label: "Monthly minimums", value: budget.reduce((sum, row) => sum + row.payment, 0), category: "dashboard" }
     ];
   }
@@ -550,10 +551,10 @@ function renderAllocation() {
   elements.allocationList.innerHTML = "";
   const groups = categories
     .filter((category) => category.id !== "dashboard")
-    .map((category) => {
+    .map((category, index) => {
       const holdings = state.holdings.filter((holding) => holding.category === category.id);
       const total = holdings.reduce((sum, holding) => sum + Math.abs(signedValue(holding) || 0), 0);
-      return { category, total, count: holdings.length };
+      return { category, total, count: holdings.length, color: pieColors[index % pieColors.length] };
     })
     .filter((group) => group.count || group.total);
 
@@ -568,12 +569,12 @@ function renderAllocation() {
     row.className = "allocation-row";
     row.innerHTML = `
       <div>
-        <strong>${group.category.label}</strong>
+        <strong><span class="allocation-swatch" style="--swatch:${group.color}"></span>${group.category.label}</strong>
         <span>${group.count} item${group.count === 1 ? "" : "s"}</span>
       </div>
       <div class="allocation-value">
         <strong>${currency(group.total)}</strong>
-        <span style="--bar:${Math.max((group.total / max) * 100, 3)}%"></span>
+        <span style="--bar:${Math.max((group.total / max) * 100, 3)}%; --bar-color:${group.color}"></span>
       </div>
     `;
     elements.allocationList.append(row);
@@ -726,14 +727,16 @@ function renderHoldings() {
     return;
   }
 
-  renderPie(elements.categoryPie, holdings.map((holding) => ({
+  renderPie(elements.categoryPie, holdings.map((holding, index) => ({
     label: holding.symbol || holding.name,
+    color: pieColors[index % pieColors.length],
     value: Math.abs(signedValue(holding) || 0)
   })));
 
-  for (const holding of holdings) {
+  holdings.forEach((holding, index) => {
     const row = document.createElement("div");
     row.className = `holding-row${holding.id === state.selectedId ? " active" : ""}`;
+    row.style.setProperty("--holding-color", pieColors[index % pieColors.length]);
     const label = holding.symbol || holding.name;
     const value = signedValue(holding);
     const sub = holding.category === "cash" && holding.institution
@@ -767,7 +770,7 @@ function renderHoldings() {
 
     row.append(button, actions);
     elements.holdingsList.append(row);
-  }
+  });
 }
 
 function resetDetailPanels(showMarket) {
@@ -1144,7 +1147,7 @@ async function lookupSymbols(query) {
   }
 
   try {
-    const results = await api(`/api/search?q=${encodeURIComponent(query)}`);
+    const results = await api(`/api/search?q=${encodeURIComponent(query)}&category=${encodeURIComponent(state.activeTab)}`);
     elements.symbolResults.innerHTML = "";
     if (!results.length) {
       elements.symbolResults.hidden = true;

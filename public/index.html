@@ -35,9 +35,14 @@
             <div class="overview-side">
               <div class="financial-snapshot">
                 <button class="summary-toggle" type="button" data-summary="net">
-                  <span>Estimated total</span>
+                  <span>Est net worth</span>
                   <strong id="totalNetWorth">--</strong>
                   <small id="totalMeta">Across all sections</small>
+                </button>
+                <button class="summary-toggle" type="button" data-summary="budget">
+                  <span>Auto budget</span>
+                  <strong id="budgetMinimum">--</strong>
+                  <small>Monthly minimums</small>
                 </button>
                 <button class="summary-toggle" type="button" data-summary="assets">
                   <span>Assets</span>
@@ -48,11 +53,6 @@
                   <span>Debts</span>
                   <strong id="debtTotal">--</strong>
                   <small>Credit and loans</small>
-                </button>
-                <button class="summary-toggle" type="button" data-summary="budget">
-                  <span>Auto budget</span>
-                  <strong id="budgetMinimum">--</strong>
-                  <small>Monthly minimums</small>
                 </button>
                 <div id="summaryDetails" class="summary-details hidden"></div>
               </div>

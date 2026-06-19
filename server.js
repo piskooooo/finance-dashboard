@@ -328,28 +328,42 @@ async function fetchNews(symbol) {
   });
 }
 
-async function searchSymbols(query) {
+function searchCategoryMatch(result, category) {
+  const symbol = result.symbol.toUpperCase();
+  const quoteType = result.quoteType.toUpperCase();
+  const type = result.type.toUpperCase();
+  const exchange = result.exchange.toUpperCase();
+  if (category === "crypto") return symbol.endsWith("-USD") || quoteType === "CRYPTOCURRENCY" || type.includes("CRYPTO");
+  if (category === "stocks") return !symbol.includes("-USD") && !symbol.includes("=F") && !["CRYPTOCURRENCY", "FUTURE"].includes(quoteType) && !type.includes("CRYPTO");
+  if (category === "commodities") return symbol.includes("=F") || quoteType === "FUTURE" || type.includes("FUTURE") || exchange === "CMX" || exchange === "NYM";
+  return true;
+}
+
+async function searchSymbols(query, category = "") {
   const q = String(query || "").trim();
   if (q.length < 1) return [];
+  const cleanCategory = String(category || "").trim().toLowerCase();
 
-  const cached = searchCache.get(q.toLowerCase());
+  const cacheKey = `${cleanCategory}:${q.toLowerCase()}`;
+  const cached = searchCache.get(cacheKey);
   if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) return cached.payload;
 
-  const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
+  const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=20&newsCount=0`;
   const raw = await fetchText(url);
   const parsed = JSON.parse(raw);
   const payload = (parsed.quotes || [])
     .filter((quote) => quote.symbol && quote.shortname)
-    .slice(0, 8)
     .map((quote) => ({
       symbol: cleanSymbol(quote.symbol),
       name: quote.shortname || quote.longname || "",
       exchange: quote.exchange || quote.exchDisp || "",
       quoteType: quote.quoteType || "",
       type: quote.typeDisp || quote.quoteType || ""
-    }));
+    }))
+    .filter((result) => searchCategoryMatch(result, cleanCategory))
+    .slice(0, 8);
 
-  searchCache.set(q.toLowerCase(), { createdAt: Date.now(), payload });
+  searchCache.set(cacheKey, { createdAt: Date.now(), payload });
   return payload;
 }
 
@@ -460,7 +474,7 @@ async function handleApi(req, res, url) {
   }
 
   if (url.pathname === "/api/search" && req.method === "GET") {
-    return sendJson(res, 200, await searchSymbols(url.searchParams.get("q")));
+    return sendJson(res, 200, await searchSymbols(url.searchParams.get("q"), url.searchParams.get("category")));
   }
 
   const marketMatch = url.pathname.match(/^\/api\/market\/([^/]+)$/);
