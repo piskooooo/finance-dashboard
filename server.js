@@ -127,6 +127,7 @@ function normalizeHoldingRecord(input) {
     paymentAmount: Number(input.paymentAmount || 0),
     paymentsLeft: Number(input.paymentsLeft || 0),
     nextDueDate: String(input.nextDueDate || "").trim(),
+    altType: String(input.altType || "").trim(),
     accountLocation: String(input.accountLocation || "").trim(),
     tags: String(input.tags || "").trim(),
     notes: String(input.notes || "").trim(),

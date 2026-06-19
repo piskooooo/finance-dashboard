@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Finance Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260618-3" />
+    <link rel="stylesheet" href="/styles.css?v=20260619-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -58,8 +58,8 @@
             </article>
           </section>
 
-          <section class="content-grid">
-            <article class="panel">
+          <section class="dashboard-grid">
+            <article class="panel allocation-panel">
               <div class="panel-header">
                 <h2>Allocation</h2>
                 <p>Estimated value by category.</p>
@@ -76,14 +76,28 @@
               <div id="attentionList" class="news-list"></div>
             </article>
 
-            <article class="panel calendar-panel">
-              <div class="panel-header">
-                <h2>Market calendar</h2>
-                <p>Closed market days and upcoming events.</p>
-              </div>
-              <div id="marketCalendar" class="market-calendar"></div>
-              <div id="upcomingEvents" class="event-list"></div>
-            </article>
+            <aside class="dashboard-side">
+              <article class="panel budget-panel">
+                <div class="panel-header">
+                  <h2>Auto budget</h2>
+                  <p>Minimum monthly debt payments to set aside.</p>
+                </div>
+                <div class="budget-total">
+                  <span>Monthly minimum</span>
+                  <strong id="budgetMinimum">--</strong>
+                </div>
+                <div id="budgetList" class="detail-list compact-list"></div>
+              </article>
+
+              <article class="panel calendar-panel">
+                <div class="panel-header">
+                  <h2>Market calendar</h2>
+                  <p>Closed market days and upcoming events.</p>
+                </div>
+                <div id="marketCalendar" class="market-calendar"></div>
+                <div id="upcomingEvents" class="event-list"></div>
+              </article>
+            </aside>
           </section>
         </section>
 
@@ -201,6 +215,13 @@
                 </label>
               </div>
 
+              <div id="altFields" class="category-fields hidden">
+                <label>
+                  Type
+                  <input name="altType" placeholder="Trading card, watch, video game, art..." />
+                </label>
+              </div>
+
               <div id="quantityMode" class="segmented" role="group" aria-label="Holding amount type">
                 <label>
                   <input type="radio" name="quantityMode" value="units" checked />
@@ -264,6 +285,7 @@
                 <h2 id="listTitle">Holdings</h2>
                 <p id="holdingCount">No items yet</p>
               </div>
+              <button id="clearSelectionButton" class="secondary clear-selection" type="button">View all</button>
               <svg id="categoryPie" class="pie-chart mini-pie" viewBox="0 0 220 220" role="img" aria-label="Category allocation chart"></svg>
               <div id="holdingsList" class="holdings-list"></div>
             </section>
@@ -344,6 +366,6 @@
       </div>
     </template>
 
-    <script src="/app.js?v=20260618-3"></script>
+    <script src="/app.js?v=20260619-1"></script>
   </body>
 </html>

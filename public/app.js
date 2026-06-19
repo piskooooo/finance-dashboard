@@ -83,7 +83,9 @@ const elements = {
   cashFields: document.querySelector("#cashFields"),
   creditFields: document.querySelector("#creditFields"),
   loanFields: document.querySelector("#loanFields"),
+  altFields: document.querySelector("#altFields"),
   saveButton: document.querySelector("#saveButton"),
+  clearSelectionButton: document.querySelector("#clearSelectionButton"),
   holdingsList: document.querySelector("#holdingsList"),
   holdingCount: document.querySelector("#holdingCount"),
   listTitle: document.querySelector("#listTitle"),
@@ -121,6 +123,8 @@ const elements = {
   debtTotal: document.querySelector("#debtTotal"),
   positionCount: document.querySelector("#positionCount"),
   marketCount: document.querySelector("#marketCount"),
+  budgetMinimum: document.querySelector("#budgetMinimum"),
+  budgetList: document.querySelector("#budgetList"),
   allocationList: document.querySelector("#allocationList"),
   allocationChart: document.querySelector("#allocationChart"),
   categoryPie: document.querySelector("#categoryPie"),
@@ -187,6 +191,7 @@ function normalizeHolding(holding) {
     paymentAmount: Number(holding.paymentAmount || 0),
     paymentsLeft: Number(holding.paymentsLeft || 0),
     nextDueDate: holding.nextDueDate || "",
+    altType: holding.altType || "",
     accountLocation: holding.accountLocation || "",
     tags: holding.tags || "",
     notes: holding.notes || ""
@@ -239,6 +244,12 @@ function signedValue(holding) {
   return categoryMap[holding.category]?.debt ? -Math.abs(value) : value;
 }
 
+function debtPayment(holding) {
+  if (holding.category === "credit") return creditEstimate(holding).minimum;
+  if (holding.category === "loans") return holding.paymentAmount > 0 ? holding.paymentAmount : 0;
+  return 0;
+}
+
 function emptyState(title, text) {
   const empty = elements.emptyStateTemplate.content.cloneNode(true);
   empty.querySelector("strong").textContent = title;
@@ -270,7 +281,7 @@ function renderPie(svg, rows) {
     return;
   }
 
-  const colors = ["#74b784", "#4f8f62", "#8bbf92", "#c8d7ca", "#789080", "#e18a68", "#7ca7d8"];
+  const colors = ["var(--brand)", "var(--brand-strong)", "#d5d8d6", "#9da4a0", "#686f6b", "var(--negative)", "#7ca7d8"];
   if (cleanRows.length === 1) {
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("cx", "110");
@@ -324,7 +335,8 @@ function renderCalendar() {
     const iso = date.toISOString().slice(0, 10);
     const closed = isMarketClosed(date);
     const events = marketEvents.filter((event) => event.date === iso);
-    cells.push(`<button type="button" class="calendar-day${closed ? " closed" : ""}${events.length ? " has-event" : ""}" title="${closed || events.map((event) => event.title).join(", ")}"><strong>${day}</strong><span>${closed ? "Closed" : events[0]?.type || ""}</span></button>`);
+    const isToday = date.toDateString() === today.toDateString();
+    cells.push(`<button type="button" class="calendar-day${closed ? " closed" : ""}${events.length ? " has-event" : ""}${isToday ? " today" : ""}" title="${closed || events.map((event) => event.title).join(", ")}"><strong>${day}</strong><span>${isToday ? "Today" : closed ? "Closed" : events[0]?.type || ""}</span></button>`);
   }
   elements.marketCalendar.innerHTML = `<div class="calendar-title">${monthName}</div><div class="calendar-weekdays"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div><div class="calendar-grid">${cells.join("")}</div>`;
 
@@ -396,8 +408,34 @@ function renderDashboard() {
         .reduce((sum, holding) => sum + Math.abs(signedValue(holding) || 0), 0)
     })));
   renderAllocation();
+  renderBudget();
   renderAttention();
   renderCalendar();
+}
+
+function renderBudget() {
+  const rows = state.holdings
+    .filter((holding) => categoryMap[holding.category]?.debt)
+    .map((holding) => ({
+      holding,
+      payment: debtPayment(holding)
+    }))
+    .filter((row) => Number.isFinite(row.payment) && row.payment > 0);
+
+  const total = rows.reduce((sum, row) => sum + row.payment, 0);
+  elements.budgetMinimum.textContent = currency(total);
+  elements.budgetList.innerHTML = "";
+  if (!rows.length) {
+    elements.budgetList.append(emptyState("No payments entered", "Add card minimums or loan payments to calculate this."));
+    return;
+  }
+
+  for (const row of rows) {
+    const item = document.createElement("div");
+    item.className = "detail-row";
+    item.innerHTML = `<span>${row.holding.name || row.holding.symbol}</span><strong>${currency(row.payment, row.holding.currency)}</strong>`;
+    elements.budgetList.append(item);
+  }
 }
 
 function renderAllocation() {
@@ -460,6 +498,7 @@ function setFieldVisibility(category) {
   const isCash = category.id === "cash";
   const isCredit = category.id === "credit";
   const isLoan = category.id === "loans";
+  const isAlt = category.id === "alts";
   const isDebt = category.id === "loans" || isCredit;
 
   elements.symbolField.classList.toggle("hidden", !isTracked);
@@ -467,9 +506,11 @@ function setFieldVisibility(category) {
   elements.cashFields.classList.toggle("hidden", !isCash);
   elements.creditFields.classList.toggle("hidden", !isCredit);
   elements.loanFields.classList.toggle("hidden", !isLoan);
+  elements.altFields.classList.toggle("hidden", !isAlt);
   setGroupEnabled(elements.cashFields, isCash);
   setGroupEnabled(elements.creditFields, isCredit);
   setGroupEnabled(elements.loanFields, isLoan);
+  setGroupEnabled(elements.altFields, isAlt);
   elements.quantityMode.classList.toggle("hidden", isCash || isCredit || isLoan);
   elements.costBasisMode.classList.toggle("hidden", !isTracked);
   elements.costPerUnitField.classList.toggle("hidden", !isTracked || new FormData(elements.form).get("costBasisMode") === "total");
@@ -478,7 +519,7 @@ function setFieldVisibility(category) {
   elements.amountField.classList.toggle("hidden", isTracked && new FormData(elements.form).get("quantityMode") !== "value");
 
   elements.amountLabel.textContent = isDebt ? "Total owed" : isCash ? "Current balance" : "Total dollar amount";
-  elements.nameLabel.textContent = isCash ? "Account nickname" : isCredit ? "Card name" : category.id === "loans" ? "Loan name" : "Name";
+  elements.nameLabel.textContent = isCash ? "Account nickname" : isCredit ? "Card name" : category.id === "loans" ? "Loan name" : isAlt ? "Item name" : "Name";
   elements.amountModeLabel.textContent = isDebt ? "Total owed" : "Total dollar amount";
 }
 
@@ -545,6 +586,7 @@ function populateForm(holding) {
   setFormValue("paymentAmount", holding.paymentAmount || "");
   setFormValue("paymentsLeft", holding.paymentsLeft || "");
   setFormValue("nextDueDate", holding.nextDueDate);
+  setFormValue("altType", holding.altType);
   setFormValue("accountLocation", holding.accountLocation);
   setFormValue("tags", holding.tags);
   setFormValue("notes", holding.notes);
@@ -559,6 +601,8 @@ function renderHoldings() {
   const holdings = currentHoldings();
   elements.holdingsList.innerHTML = "";
   elements.holdingCount.textContent = holdings.length ? `${holdings.length} item${holdings.length === 1 ? "" : "s"}` : `No ${category.label.toLowerCase()} yet`;
+  elements.clearSelectionButton.disabled = !state.selectedId;
+  elements.clearSelectionButton.textContent = state.selectedId ? "View all" : "Viewing all";
 
   if (!holdings.length) {
     renderPie(elements.categoryPie, []);
@@ -630,6 +674,39 @@ function renderEmptyMarket(message = "Select an item to view details.") {
   elements.priceChart.innerHTML = "";
   elements.newsCaption.textContent = "No articles loaded.";
   elements.newsList.innerHTML = "";
+}
+
+function renderCategoryOverview() {
+  const category = activeCategory();
+  const holdings = currentHoldings();
+  const total = holdings.reduce((sum, holding) => sum + Math.abs(signedValue(holding) || 0), 0);
+  const cost = holdings.reduce((sum, holding) => sum + (itemCost(holding) || 0), 0);
+  const debts = category.debt;
+  resetDetailPanels(false);
+  elements.selectedEyebrow.textContent = `${category.label} overview`;
+  elements.selectedTitle.textContent = holdings.length ? `All ${category.label.toLowerCase()}` : `No ${category.label.toLowerCase()} yet`;
+  elements.selectedSummary.textContent = holdings.length
+    ? `Combined ${category.label.toLowerCase()} view across ${holdings.length} item${holdings.length === 1 ? "" : "s"}.`
+    : "Add an item from the form to start tracking this section.";
+  elements.valueLabel.textContent = debts ? "Total owed" : "Total value";
+  elements.lastPrice.textContent = currency(total);
+  elements.quoteMeta.textContent = holdings.length ? "Combined category total" : "No saved items";
+  elements.metricOneLabel.textContent = debts ? "Monthly minimum" : "Items";
+  elements.metricTwoLabel.textContent = "Cost basis";
+  elements.unitsHeldLabel.textContent = "Tracked";
+  elements.positionValueLabel.textContent = debts ? "Debt total" : "Value total";
+  elements.dayChange.classList.remove("positive", "negative");
+  elements.weekChange.classList.remove("positive", "negative");
+  elements.dayChange.textContent = debts ? currency(holdings.reduce((sum, holding) => sum + debtPayment(holding), 0)) : number(holdings.length, 0);
+  elements.weekChange.textContent = cost ? currency(cost) : "--";
+  elements.sharesHeld.textContent = number(holdings.length, 0);
+  elements.positionValue.textContent = currency(total);
+  elements.manualTitle.textContent = `${category.label} breakdown`;
+  elements.manualCaption.textContent = "Select an individual item when you want item-level performance, notes, or news.";
+  elements.manualList.innerHTML = holdings.length
+    ? holdings.map((holding) => detailRow(holding.symbol || holding.name, currency(Math.abs(signedValue(holding) || 0), holding.currency))).join("")
+    : "";
+  if (!holdings.length) elements.manualList.append(emptyState("Nothing here yet", "Use the form to add the first item."));
 }
 
 function renderChart(history) {
@@ -786,6 +863,7 @@ function renderManualDetails(holding) {
     elements.weekChange.textContent = holding.apy ? `${number(holding.apy, 2)}%` : holding.currency || "USD";
     rows = [
       detailRow("Category", category.label),
+      detailRow("Type", holding.altType),
       detailRow("Value", currency(value, holding.currency)),
       detailRow("Cost basis", cost ? currency(cost, holding.currency) : "--"),
       detailRow("Location / account", holding.accountLocation),
@@ -801,7 +879,7 @@ function renderManualDetails(holding) {
 
 function renderMarket() {
   const holding = activeHolding();
-  if (!holding) return renderEmptyMarket();
+  if (!holding) return renderCategoryOverview();
   if (holding.trackingType !== "market") return renderManualDetails(holding);
   resetDetailPanels(true);
   renderRangeControls();
@@ -853,12 +931,20 @@ async function selectHolding(id, force = false) {
   }
 }
 
+function clearSelection() {
+  state.selectedId = null;
+  renderHoldings();
+  renderCategoryOverview();
+}
+
 async function refreshActiveTab() {
   if (state.activeTab === "dashboard") {
     await Promise.allSettled(state.holdings.filter((holding) => holding.trackingType === "market").slice(0, 8).map((holding) => loadMarketFor(holding, true)));
     renderDashboard();
   } else if (state.selectedId) {
     await selectHolding(state.selectedId, true);
+  } else {
+    renderCategoryOverview();
   }
 }
 
@@ -893,10 +979,25 @@ async function setTab(tab) {
   renderAssetForm();
   if (changedTabs) resetFormForTab(tab);
   const holdings = currentHoldings();
-  if (!holdings.some((holding) => holding.id === state.selectedId)) state.selectedId = holdings[0]?.id || null;
+  if (changedTabs || !holdings.some((holding) => holding.id === state.selectedId)) state.selectedId = null;
   renderHoldings();
   if (state.selectedId) await selectHolding(state.selectedId, changedTabs && category.tracked);
-  else renderEmptyMarket();
+  else renderCategoryOverview();
+}
+
+async function fillCurrentPriceBasis(symbol) {
+  if (!symbol) return;
+  try {
+    const market = await api(`/api/market/${encodeURIComponent(symbol)}?range=24h`);
+    const price = market?.quote?.price;
+    if (!Number.isFinite(price) || price <= 0) return;
+    setFormValue("costBasisMode", "perUnit");
+    setFormValue("costPerUnit", price.toFixed(price >= 1 ? 2 : 8));
+    state.markets.set(marketKey(symbol), market);
+    renderQuantityMode();
+  } catch {
+    // Price prefill is a convenience; symbol selection should still succeed if quotes are unavailable.
+  }
 }
 
 async function lookupSymbols(query) {
@@ -918,12 +1019,13 @@ async function lookupSymbols(query) {
       button.type = "button";
       button.className = "symbol-result";
       button.innerHTML = `<strong>${result.symbol}</strong><span>${result.name} · ${result.exchange || result.type}</span>`;
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         elements.symbolInput.value = result.symbol;
         elements.nameInput.value = result.name;
         elements.exchangeInput.value = result.exchange || "";
         elements.quoteTypeInput.value = result.quoteType || "";
         clearSymbolResults();
+        await fillCurrentPriceBasis(result.symbol);
       });
       elements.symbolResults.append(button);
     }
@@ -969,6 +1071,7 @@ document.addEventListener("click", (event) => {
 });
 
 elements.refreshButton.addEventListener("click", refreshActiveTab);
+elements.clearSelectionButton.addEventListener("click", clearSelection);
 
 renderTabs();
 renderRangeControls();
