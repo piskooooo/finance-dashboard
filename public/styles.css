@@ -262,9 +262,10 @@ h2 {
 
 .overview-side {
   display: grid;
-  grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 1fr);
+  grid-template-columns: minmax(320px, 1.2fr) minmax(240px, 0.8fr);
   gap: 14px;
-  min-width: min(520px, 48%);
+  align-items: start;
+  min-width: min(680px, 58%);
 }
 
 .panel-header {
@@ -446,13 +447,68 @@ h2 {
   font-weight: 800;
 }
 
+.financial-snapshot {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.summary-toggle,
+.attention-toggle {
+  display: grid;
+  gap: 0.28rem;
+  border-color: var(--line);
+  background: #101010;
+  box-shadow: none;
+  color: var(--ink);
+  padding: 14px;
+  text-align: left;
+}
+
+.summary-toggle:hover,
+.summary-toggle.active,
+.attention-toggle:hover,
+.attention-toggle.active {
+  border-color: var(--brand-ring);
+  background: var(--brand-soft);
+}
+
+.summary-toggle span,
+.attention-toggle span {
+  color: var(--brand-strong);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.summary-toggle strong,
+.attention-toggle strong {
+  font-size: 1.35rem;
+  line-height: 1.1;
+}
+
+.summary-toggle small {
+  color: var(--muted);
+}
+
+.summary-details {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+}
+
+.summary-row {
+  width: 100%;
+  color: var(--ink);
+  text-align: left;
+}
+
 .content-grid {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
 }
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(240px, 0.85fr) minmax(200px, 0.65fr) minmax(460px, 1.45fr);
+  grid-template-columns: minmax(320px, 0.8fr) minmax(560px, 1.4fr);
   gap: 14px;
   align-items: start;
 }
@@ -609,6 +665,22 @@ h2 {
   stroke-width: 1;
 }
 
+.chart-dot {
+  fill: var(--brand);
+  stroke: #050505;
+  stroke-width: 2;
+}
+
+.chart-label {
+  fill: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chart-price-label {
+  fill: var(--brand-strong);
+}
+
 .news-list {
   display: grid;
   gap: 12px;
@@ -671,7 +743,20 @@ h2 {
 }
 
 .calendar-title {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
   font-weight: 800;
+  text-align: center;
+}
+
+.calendar-nav {
+  padding: 0.5rem 0.7rem;
+  border-color: var(--line);
+  background: #111;
+  box-shadow: none;
+  color: var(--ink);
 }
 
 .calendar-weekdays,
@@ -689,7 +774,7 @@ h2 {
 }
 
 .calendar-day {
-  min-height: 76px;
+  min-height: 88px;
   border-color: var(--line);
   background: #111;
   box-shadow: none;
@@ -774,11 +859,7 @@ h2 {
   border-radius: 8px;
   background: #111;
   padding: 14px;
-}
-
-.attention-compact h3,
-.attention-compact p {
-  margin: 0;
+  align-content: start;
 }
 
 .compact-news {
@@ -866,6 +947,7 @@ h2 {
   }
 
   .metric-grid,
+  .financial-snapshot,
   .allocation-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -894,6 +976,7 @@ h2 {
 
   .field-grid,
   .metric-grid,
+  .financial-snapshot,
   .segmented,
   .allocation-row {
     grid-template-columns: 1fr;

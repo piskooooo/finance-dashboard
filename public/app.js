@@ -27,7 +27,10 @@ const state = {
   activeTab: "dashboard",
   selectedId: null,
   lookupTimer: null,
-  chartRange: "24h"
+  chartRange: "24h",
+  calendarOffset: 0,
+  summaryOpen: null,
+  attentionOpen: false
 };
 
 const marketEvents = [
@@ -125,10 +128,12 @@ const elements = {
   positionCount: document.querySelector("#positionCount"),
   marketCount: document.querySelector("#marketCount"),
   budgetMinimum: document.querySelector("#budgetMinimum"),
-  budgetList: document.querySelector("#budgetList"),
+  summaryDetails: document.querySelector("#summaryDetails"),
   allocationList: document.querySelector("#allocationList"),
   allocationChart: document.querySelector("#allocationChart"),
   categoryPie: document.querySelector("#categoryPie"),
+  attentionToggle: document.querySelector("#attentionToggle"),
+  attentionCount: document.querySelector("#attentionCount"),
   attentionList: document.querySelector("#attentionList"),
   marketCalendar: document.querySelector("#marketCalendar"),
   upcomingEvents: document.querySelector("#upcomingEvents")
@@ -251,6 +256,30 @@ function debtPayment(holding) {
   return 0;
 }
 
+function holdingGain(holding) {
+  const value = Math.abs(signedValue(holding) || 0);
+  const cost = itemCost(holding);
+  if (!Number.isFinite(value) || !Number.isFinite(cost) || cost <= 0 || categoryMap[holding.category]?.debt) return null;
+  const amount = value - cost;
+  return { amount, percent: (amount / cost) * 100 };
+}
+
+function gainText(holding) {
+  const gain = holdingGain(holding);
+  if (!gain) return "--";
+  return `${currency(gain.amount, holding.currency)} (${percent(gain.percent)})`;
+}
+
+function budgetRows() {
+  return state.holdings
+    .filter((holding) => categoryMap[holding.category]?.debt)
+    .map((holding) => ({
+      holding,
+      payment: debtPayment(holding)
+    }))
+    .filter((row) => Number.isFinite(row.payment) && row.payment > 0);
+}
+
 function emptyState(title, text) {
   const empty = elements.emptyStateTemplate.content.cloneNode(true);
   empty.querySelector("strong").textContent = title;
@@ -324,8 +353,10 @@ function isMarketClosed(date) {
 
 function renderCalendar() {
   const today = new Date();
+  const offset = Math.max(-6, Math.min(6, state.calendarOffset));
+  state.calendarOffset = offset;
   const year = today.getFullYear();
-  const month = today.getMonth();
+  const month = today.getMonth() + offset;
   const first = new Date(year, month, 1);
   const last = new Date(year, month + 1, 0);
   const monthName = first.toLocaleString("en-US", { month: "long", year: "numeric" });
@@ -339,11 +370,28 @@ function renderCalendar() {
     const isToday = date.toDateString() === today.toDateString();
     cells.push(`<button type="button" class="calendar-day${closed ? " closed" : ""}${events.length ? " has-event" : ""}${isToday ? " today" : ""}" title="${closed || events.map((event) => event.title).join(", ")}"><strong>${day}</strong><span>${isToday ? "Today" : closed ? "Closed" : events[0]?.type || ""}</span></button>`);
   }
-  elements.marketCalendar.innerHTML = `<div class="calendar-title">${monthName}</div><div class="calendar-weekdays"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div><div class="calendar-grid">${cells.join("")}</div>`;
+  elements.marketCalendar.innerHTML = `
+    <div class="calendar-title">
+      <button type="button" class="calendar-nav" data-calendar-nav="-1" ${offset <= -6 ? "disabled" : ""}>Prev</button>
+      <strong>${monthName}</strong>
+      <button type="button" class="calendar-nav" data-calendar-nav="1" ${offset >= 6 ? "disabled" : ""}>Next</button>
+    </div>
+    <div class="calendar-weekdays"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+    <div class="calendar-grid">${cells.join("")}</div>
+  `;
+  elements.marketCalendar.querySelectorAll("[data-calendar-nav]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.calendarOffset += Number(button.dataset.calendarNav);
+      renderCalendar();
+    });
+  });
 
-  const todayIso = today.toISOString().slice(0, 10);
-  const upcoming = marketEvents.filter((event) => event.date >= todayIso).slice(0, 6);
-  elements.upcomingEvents.innerHTML = upcoming.map((event) => `<button type="button" class="event-row"><strong>${event.title}</strong><span>${event.type} · ${new Date(`${event.date}T12:00:00`).toLocaleDateString()}</span></button>`).join("");
+  const monthStart = first.toISOString().slice(0, 10);
+  const monthEnd = last.toISOString().slice(0, 10);
+  const upcoming = marketEvents.filter((event) => event.date >= monthStart && event.date <= monthEnd).slice(0, 8);
+  elements.upcomingEvents.innerHTML = upcoming.length
+    ? upcoming.map((event) => `<button type="button" class="event-row"><strong>${event.title}</strong><span>${event.type} · ${new Date(`${event.date}T12:00:00`).toLocaleDateString()}</span></button>`).join("")
+    : `<div class="empty-state"><strong>No listed events</strong><span>No saved market holidays or Fed events for ${monthName}.</span></div>`;
 }
 
 function clearSymbolResults() {
@@ -415,27 +463,86 @@ function renderDashboard() {
 }
 
 function renderBudget() {
-  const rows = state.holdings
-    .filter((holding) => categoryMap[holding.category]?.debt)
-    .map((holding) => ({
-      holding,
-      payment: debtPayment(holding)
-    }))
-    .filter((row) => Number.isFinite(row.payment) && row.payment > 0);
-
+  const rows = budgetRows();
   const total = rows.reduce((sum, row) => sum + row.payment, 0);
   elements.budgetMinimum.textContent = currency(total);
-  elements.budgetList.innerHTML = "";
-  if (!rows.length) {
-    elements.budgetList.append(emptyState("No payments entered", "Add card minimums or loan payments to calculate this."));
+  renderSummaryDetails();
+}
+
+function renderSummaryDetails() {
+  elements.summaryDetails.innerHTML = "";
+  elements.summaryDetails.classList.toggle("hidden", !state.summaryOpen);
+  document.querySelectorAll(".summary-toggle").forEach((button) => {
+    button.classList.toggle("active", button.dataset.summary === state.summaryOpen);
+  });
+  if (!state.summaryOpen) return;
+
+  const rows = state.holdings.map((holding) => ({ holding, value: signedValue(holding) }));
+  const assets = rows.filter((row) => Number.isFinite(row.value) && row.value > 0);
+  const debts = rows.filter((row) => Number.isFinite(row.value) && row.value < 0);
+  const assetTotal = assets.reduce((sum, row) => sum + row.value, 0);
+  const debtTotal = debts.reduce((sum, row) => sum + Math.abs(row.value), 0);
+  const budget = budgetRows();
+
+  let detailRows = [];
+  let emptyMessage = ["Nothing to show yet", "Add items from the sidebar sections."];
+  if (state.summaryOpen === "assets") {
+    detailRows = categories
+      .filter((category) => category.id !== "dashboard" && !category.debt)
+      .map((category) => {
+        const total = state.holdings
+          .filter((holding) => holding.category === category.id)
+          .reduce((sum, holding) => sum + Math.abs(signedValue(holding) || 0), 0);
+        return { label: category.label, value: total, category: category.id };
+      })
+      .filter((row) => row.value > 0);
+    emptyMessage = ["No assets yet", "Add cash, stocks, crypto, commodities, or alt investments."];
+  } else if (state.summaryOpen === "debts") {
+    detailRows = debts.map((row) => ({
+      label: row.holding.name || row.holding.symbol,
+      value: Math.abs(row.value),
+      category: row.holding.category,
+      id: row.holding.id,
+      currency: row.holding.currency
+    }));
+    emptyMessage = ["No debts entered", "Add credit cards or loans to track balances."];
+  } else if (state.summaryOpen === "budget") {
+    detailRows = budget.map((row) => ({
+      label: row.holding.name || row.holding.symbol,
+      value: row.payment,
+      category: row.holding.category,
+      id: row.holding.id,
+      currency: row.holding.currency
+    }));
+    emptyMessage = ["No payments entered", "Add card minimums or loan payments to calculate this."];
+  } else {
+    detailRows = [
+      { label: "Assets", value: assetTotal, category: "dashboard" },
+      { label: "Debts", value: debtTotal, category: "dashboard" },
+      { label: "Estimated total", value: assetTotal - debtTotal, category: "dashboard" },
+      { label: "Monthly minimums", value: budget.reduce((sum, row) => sum + row.payment, 0), category: "dashboard" }
+    ];
+  }
+
+  if (!detailRows.length) {
+    elements.summaryDetails.append(emptyState(emptyMessage[0], emptyMessage[1]));
     return;
   }
 
-  for (const row of rows) {
-    const item = document.createElement("div");
-    item.className = "detail-row";
-    item.innerHTML = `<span>${row.holding.name || row.holding.symbol}</span><strong>${currency(row.payment, row.holding.currency)}</strong>`;
-    elements.budgetList.append(item);
+  for (const row of detailRows) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "detail-row summary-row";
+    button.innerHTML = `<span>${row.label}</span><strong>${currency(row.value, row.currency)}</strong>`;
+    button.addEventListener("click", async () => {
+      if (row.id) {
+        await setTab(row.category);
+        await selectHolding(row.id);
+      } else if (row.category && row.category !== "dashboard") {
+        await setTab(row.category);
+      }
+    });
+    elements.summaryDetails.append(button);
   }
 }
 
@@ -475,7 +582,12 @@ function renderAllocation() {
 
 function renderAttention() {
   elements.attentionList.innerHTML = "";
-  const needs = state.holdings.filter((holding) => !Number.isFinite(itemValue(holding)) || itemValue(holding) === 0).slice(0, 6);
+  const needs = state.holdings.filter((holding) => !Number.isFinite(itemValue(holding)) || itemValue(holding) === 0);
+  elements.attentionCount.textContent = `${needs.length} item${needs.length === 1 ? "" : "s"} need attention`;
+  elements.attentionList.classList.toggle("hidden", !state.attentionOpen);
+  elements.attentionToggle.classList.toggle("active", state.attentionOpen);
+  if (!state.attentionOpen) return;
+
   if (!needs.length) {
     elements.attentionList.append(emptyState("Nothing obvious missing", "Every saved item has at least a rough value."));
     return;
@@ -747,8 +859,31 @@ function renderChart(history) {
   const linePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
   linePath.setAttribute("class", "chart-line");
   linePath.setAttribute("d", line);
-  elements.priceChart.append(areaPath, axis, linePath);
-  elements.chartCaption.textContent = `${history[0].date} to ${history.at(-1).date}`;
+  const latestPoint = points.at(-1);
+  const latest = history.at(-1)?.close;
+  const labels = [
+    { x: pad, y: 16, anchor: "start", text: `High ${currency(max)}` },
+    { x: pad, y: height - 28, anchor: "start", text: `Low ${currency(min)}` },
+    { x: width - pad, y: Math.max(18, latestPoint[1] - 10), anchor: "end", text: `Last ${currency(latest)}`, className: "chart-price-label" },
+    { x: pad, y: height - 4, anchor: "start", text: history[0].date },
+    { x: width - pad, y: height - 4, anchor: "end", text: history.at(-1).date }
+  ];
+  const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  dot.setAttribute("class", "chart-dot");
+  dot.setAttribute("cx", latestPoint[0]);
+  dot.setAttribute("cy", latestPoint[1]);
+  dot.setAttribute("r", "4");
+  const labelNodes = labels.map((label) => {
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("class", `chart-label${label.className ? ` ${label.className}` : ""}`);
+    text.setAttribute("x", label.x);
+    text.setAttribute("y", label.y);
+    text.setAttribute("text-anchor", label.anchor);
+    text.textContent = label.text;
+    return text;
+  });
+  elements.priceChart.append(areaPath, axis, linePath, dot, ...labelNodes);
+  elements.chartCaption.textContent = `${history[0].date} to ${history.at(-1).date} · ${currency(min)} - ${currency(max)}`;
 }
 
 function renderNews(news) {
@@ -867,6 +1002,7 @@ function renderManualDetails(holding) {
       detailRow("Type", holding.altType),
       detailRow("Value", currency(value, holding.currency)),
       detailRow("Cost basis", cost ? currency(cost, holding.currency) : "--"),
+      detailRow("Gain / loss", gainText(holding)),
       detailRow("Location / account", holding.accountLocation),
       detailRow("Tags", holding.tags),
       detailRow("Notes", holding.notes)
@@ -904,7 +1040,7 @@ function renderMarket() {
   elements.newsTitle.textContent = `${holding.symbol} news`;
   renderChart(history);
   renderNews(news);
-  if (cost) elements.quoteMeta.textContent += ` · Cost basis ${currency(cost)}`;
+  if (cost) elements.quoteMeta.textContent += ` · Cost basis ${currency(cost)} · Gain/loss ${gainText(holding)}`;
 }
 
 async function loadMarketFor(holding, force = false) {
@@ -1073,6 +1209,16 @@ document.addEventListener("click", (event) => {
 
 elements.refreshButton.addEventListener("click", refreshActiveTab);
 elements.clearSelectionButton.addEventListener("click", clearSelection);
+document.querySelectorAll(".summary-toggle").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.summaryOpen = state.summaryOpen === button.dataset.summary ? null : button.dataset.summary;
+    renderSummaryDetails();
+  });
+});
+elements.attentionToggle.addEventListener("click", () => {
+  state.attentionOpen = !state.attentionOpen;
+  renderAttention();
+});
 
 renderTabs();
 renderRangeControls();
