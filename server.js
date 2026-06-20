@@ -330,12 +330,19 @@ async function fetchNews(symbol) {
 
 function searchCategoryMatch(result, category) {
   const symbol = result.symbol.toUpperCase();
+  const name = result.name.toUpperCase();
   const quoteType = result.quoteType.toUpperCase();
   const type = result.type.toUpperCase();
   const exchange = result.exchange.toUpperCase();
   if (category === "crypto") return symbol.endsWith("-USD") || quoteType === "CRYPTOCURRENCY" || type.includes("CRYPTO");
   if (category === "stocks") return !symbol.includes("-USD") && !symbol.includes("=F") && !["CRYPTOCURRENCY", "FUTURE"].includes(quoteType) && !type.includes("CRYPTO");
-  if (category === "commodities") return symbol.includes("=F") || quoteType === "FUTURE" || type.includes("FUTURE") || exchange === "CMX" || exchange === "NYM";
+  if (category === "commodities") {
+    const commodityTerms = ["GOLD", "SILVER", "COPPER", "PLATINUM", "PALLADIUM", "OIL", "NATURAL GAS", "GASOLINE", "WHEAT", "CORN", "SOYBEAN", "COCOA", "COFFEE", "SUGAR", "COTTON", "COMMODITY", "COMMODITIES", "METALS", "ENERGY"];
+    if (symbol.endsWith("-USD") || quoteType === "CRYPTOCURRENCY" || type.includes("CRYPTO")) return false;
+    if (symbol.includes("=F") || quoteType === "FUTURE" || type.includes("FUTURE") || exchange === "CMX" || exchange === "NYM") return true;
+    if (["ETF", "MUTUALFUND"].includes(quoteType) || type.includes("ETF") || type.includes("FUND")) return commodityTerms.some((term) => name.includes(term));
+    return false;
+  }
   return true;
 }
 

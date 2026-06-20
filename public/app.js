@@ -1,8 +1,8 @@
 const categories = [
   { id: "dashboard", label: "Dashboard", tracked: false },
-  { id: "stocks", label: "Stocks", singular: "stock", tracked: true, units: "Shares" },
-  { id: "crypto", label: "Crypto", singular: "crypto asset", tracked: true, units: "Coins / tokens" },
-  { id: "commodities", label: "Commodities", singular: "commodity", tracked: true, units: "Units" },
+  { id: "stocks", label: "Stocks", singular: "stock", tracked: true, units: "Shares", examples: "AAPL, VOO, HIMS" },
+  { id: "crypto", label: "Crypto", singular: "crypto asset", tracked: true, units: "Coins / tokens", examples: "BTC-USD, ETH-USD, SOL-USD" },
+  { id: "commodities", label: "Commodities", singular: "commodity", tracked: true, units: "Units", examples: "GC=F, GLD, SLV, USO" },
   { id: "alts", label: "Alt investments", singular: "alt investment", tracked: false, units: "Items" },
   { id: "credit", label: "Credit", singular: "card", tracked: false, debt: true, units: "Cards" },
   { id: "loans", label: "Loans", singular: "loan", tracked: false, debt: true, units: "Loans" },
@@ -654,6 +654,7 @@ function renderAssetForm() {
   elements.formHint.textContent = category.tracked
     ? "Type a ticker and pick a Yahoo Finance match to autofill name/details."
     : "Manual entry. Add as many accounts or items as you need.";
+  elements.symbolInput.placeholder = category.examples || "Ticker symbol";
   elements.categoryInput.value = category.id;
   elements.unitsLabel.textContent = category.units;
   elements.unitsModeLabel.textContent = category.units;
