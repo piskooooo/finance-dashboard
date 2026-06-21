@@ -79,7 +79,7 @@ function cleanSymbol(input) {
 
 function cleanCategory(input) {
   const value = String(input || "stocks").trim().toLowerCase();
-  return ["stocks", "crypto", "commodities", "alts", "credit", "loans", "cash"].includes(value) ? value : "stocks";
+  return ["stocks", "crypto", "commodities", "alts", "credit", "loans", "cash", "income", "expenses"].includes(value) ? value : "stocks";
 }
 
 function makeId(input) {
@@ -128,6 +128,8 @@ function normalizeHoldingRecord(input) {
     paymentsLeft: Number(input.paymentsLeft || 0),
     nextDueDate: String(input.nextDueDate || "").trim(),
     altType: String(input.altType || "").trim(),
+    incomeType: String(input.incomeType || "").trim(),
+    expenseType: String(input.expenseType || "").trim(),
     accountLocation: String(input.accountLocation || "").trim(),
     tags: String(input.tags || "").trim(),
     notes: String(input.notes || "").trim(),

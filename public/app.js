@@ -6,7 +6,9 @@ const categories = [
   { id: "alts", label: "Alt investments", singular: "alt investment", tracked: false, units: "Items" },
   { id: "credit", label: "Credit", singular: "card", tracked: false, debt: true, units: "Cards" },
   { id: "loans", label: "Loans", singular: "loan", tracked: false, debt: true, units: "Loans" },
-  { id: "cash", label: "Cash", singular: "cash account", tracked: false, units: "Accounts" }
+  { id: "cash", label: "Cash", singular: "cash account", tracked: false, units: "Accounts" },
+  { id: "income", label: "Income", singular: "income source", tracked: false, cashflow: true, units: "Sources" },
+  { id: "expenses", label: "Expenses", singular: "expense", tracked: false, cashflow: true, units: "Expenses" }
 ];
 
 const chartRanges = [
@@ -88,6 +90,8 @@ const elements = {
   creditFields: document.querySelector("#creditFields"),
   loanFields: document.querySelector("#loanFields"),
   altFields: document.querySelector("#altFields"),
+  incomeFields: document.querySelector("#incomeFields"),
+  expenseFields: document.querySelector("#expenseFields"),
   accountLocationField: document.querySelector("#accountLocationField"),
   saveButton: document.querySelector("#saveButton"),
   clearSelectionButton: document.querySelector("#clearSelectionButton"),
@@ -126,9 +130,11 @@ const elements = {
   totalMeta: document.querySelector("#totalMeta"),
   assetTotal: document.querySelector("#assetTotal"),
   debtTotal: document.querySelector("#debtTotal"),
+  incomeTotal: document.querySelector("#incomeTotal"),
+  paymentTotal: document.querySelector("#paymentTotal"),
+  monthlyNetTotal: document.querySelector("#monthlyNetTotal"),
   positionCount: document.querySelector("#positionCount"),
   marketCount: document.querySelector("#marketCount"),
-  budgetMinimum: document.querySelector("#budgetMinimum"),
   summaryDetails: document.querySelector("#summaryDetails"),
   allocationList: document.querySelector("#allocationList"),
   allocationChart: document.querySelector("#allocationChart"),
@@ -199,6 +205,8 @@ function normalizeHolding(holding) {
     paymentsLeft: Number(holding.paymentsLeft || 0),
     nextDueDate: holding.nextDueDate || "",
     altType: holding.altType || "",
+    incomeType: holding.incomeType || "",
+    expenseType: holding.expenseType || "",
     accountLocation: holding.accountLocation || "",
     tags: holding.tags || "",
     notes: holding.notes || ""
@@ -246,6 +254,7 @@ function itemCost(holding) {
 }
 
 function signedValue(holding) {
+  if (categoryMap[holding.category]?.cashflow) return 0;
   const value = itemValue(holding);
   if (!Number.isFinite(value)) return null;
   return categoryMap[holding.category]?.debt ? -Math.abs(value) : value;
@@ -279,6 +288,48 @@ function budgetRows() {
       payment: debtPayment(holding)
     }))
     .filter((row) => Number.isFinite(row.payment) && row.payment > 0);
+}
+
+function monthlyIncomeRows() {
+  return state.holdings
+    .filter((holding) => holding.category === "income")
+    .map((holding) => {
+      const gross = Math.abs(itemValue(holding) || 0);
+      const incomeType = String(holding.incomeType || "").toLowerCase();
+      const taxSetAside = ["1099", "cash"].includes(incomeType) ? gross * 0.2 : 0;
+      return { holding, gross, taxSetAside, net: gross - taxSetAside };
+    })
+    .filter((row) => row.gross > 0);
+}
+
+function monthlyExpenseRows() {
+  return state.holdings
+    .filter((holding) => holding.category === "expenses")
+    .map((holding) => ({ holding, payment: Math.abs(itemValue(holding) || 0) }))
+    .filter((row) => row.payment > 0);
+}
+
+function monthlyCashFlow() {
+  const income = monthlyIncomeRows();
+  const expenses = monthlyExpenseRows();
+  const debts = budgetRows();
+  const grossIncome = income.reduce((sum, row) => sum + row.gross, 0);
+  const taxSetAside = income.reduce((sum, row) => sum + row.taxSetAside, 0);
+  const expenseTotal = expenses.reduce((sum, row) => sum + row.payment, 0);
+  const debtPaymentTotal = debts.reduce((sum, row) => sum + row.payment, 0);
+  const paymentTotal = expenseTotal + debtPaymentTotal;
+  return {
+    income,
+    expenses,
+    debts,
+    grossIncome,
+    taxSetAside,
+    expenseTotal,
+    debtPaymentTotal,
+    paymentTotal,
+    netIncome: grossIncome - taxSetAside,
+    monthlyNet: grossIncome - taxSetAside - paymentTotal
+  };
 }
 
 function emptyState(title, text) {
@@ -433,6 +484,7 @@ function renderDashboard() {
   const assets = rows.filter((row) => Number.isFinite(row.value) && row.value > 0).reduce((sum, row) => sum + row.value, 0);
   const debts = rows.filter((row) => Number.isFinite(row.value) && row.value < 0).reduce((sum, row) => sum + Math.abs(row.value), 0);
   const net = assets - debts;
+  const cashFlow = monthlyCashFlow();
   const marketItems = state.holdings.filter((holding) => holding.trackingType === "market").length;
   const marketRows = state.holdings
     .filter((holding) => holding.trackingType === "market")
@@ -445,11 +497,14 @@ function renderDashboard() {
   elements.totalNetWorth.textContent = currency(net);
   elements.assetTotal.textContent = currency(assets);
   elements.debtTotal.textContent = currency(debts);
+  elements.incomeTotal.textContent = currency(cashFlow.grossIncome);
+  elements.paymentTotal.textContent = currency(cashFlow.paymentTotal);
+  elements.monthlyNetTotal.textContent = currency(cashFlow.monthlyNet);
   elements.positionCount.textContent = number(state.holdings.length, 0);
   elements.marketCount.textContent = number(marketItems, 0);
   elements.totalMeta.textContent = `${state.holdings.length} total item${state.holdings.length === 1 ? "" : "s"}`;
   renderPie(elements.allocationChart, categories
-    .filter((category) => category.id !== "dashboard")
+    .filter((category) => category.id !== "dashboard" && !category.cashflow)
     .map((category, index) => ({
       label: category.label,
       color: pieColors[index % pieColors.length],
@@ -464,9 +519,6 @@ function renderDashboard() {
 }
 
 function renderBudget() {
-  const rows = budgetRows();
-  const total = rows.reduce((sum, row) => sum + row.payment, 0);
-  elements.budgetMinimum.textContent = currency(total);
   renderSummaryDetails();
 }
 
@@ -483,13 +535,14 @@ function renderSummaryDetails() {
   const debts = rows.filter((row) => Number.isFinite(row.value) && row.value < 0);
   const assetTotal = assets.reduce((sum, row) => sum + row.value, 0);
   const debtTotal = debts.reduce((sum, row) => sum + Math.abs(row.value), 0);
-  const budget = budgetRows();
+  const cashFlow = monthlyCashFlow();
+  const budget = cashFlow.debts;
 
   let detailRows = [];
   let emptyMessage = ["Nothing to show yet", "Add items from the sidebar sections."];
   if (state.summaryOpen === "assets") {
     detailRows = categories
-      .filter((category) => category.id !== "dashboard" && !category.debt)
+      .filter((category) => category.id !== "dashboard" && !category.debt && !category.cashflow)
       .map((category) => {
         const total = state.holdings
           .filter((holding) => holding.category === category.id)
@@ -507,21 +560,49 @@ function renderSummaryDetails() {
       currency: row.holding.currency
     }));
     emptyMessage = ["No debts entered", "Add credit cards or loans to track balances."];
-  } else if (state.summaryOpen === "budget") {
-    detailRows = budget.map((row) => ({
-      label: row.holding.name || row.holding.symbol,
-      value: row.payment,
+  } else if (state.summaryOpen === "income") {
+    detailRows = cashFlow.income.map((row) => ({
+      label: row.holding.name,
+      value: row.gross,
       category: row.holding.category,
       id: row.holding.id,
       currency: row.holding.currency
     }));
-    emptyMessage = ["No payments entered", "Add card minimums or loan payments to calculate this."];
+    emptyMessage = ["No income entered", "Add income sources to estimate monthly cash flow."];
+  } else if (state.summaryOpen === "payments") {
+    detailRows = [
+      ...budget.map((row) => ({
+        label: row.holding.name || row.holding.symbol,
+        value: row.payment,
+        category: row.holding.category,
+        id: row.holding.id,
+        currency: row.holding.currency
+      })),
+      ...cashFlow.expenses.map((row) => ({
+        label: row.holding.name,
+        value: row.payment,
+        category: row.holding.category,
+        id: row.holding.id,
+        currency: row.holding.currency
+      }))
+    ];
+    emptyMessage = ["No payments entered", "Add debt payments or monthly expenses to calculate this."];
+  } else if (state.summaryOpen === "monthlyNet") {
+    detailRows = [
+      { label: "Gross income", value: cashFlow.grossIncome, category: "income" },
+      { label: "Tax set-aside", value: cashFlow.taxSetAside, category: "income" },
+      { label: "Debt payments", value: cashFlow.debtPaymentTotal, category: "credit" },
+      { label: "Expenses", value: cashFlow.expenseTotal, category: "expenses" },
+      { label: "Est monthly net", value: cashFlow.monthlyNet, category: "dashboard" }
+    ];
   } else {
     detailRows = [
       { label: "Assets", value: assetTotal, category: "dashboard" },
       { label: "Debts", value: debtTotal, category: "dashboard" },
       { label: "Est net worth", value: assetTotal - debtTotal, category: "dashboard" },
-      { label: "Monthly minimums", value: budget.reduce((sum, row) => sum + row.payment, 0), category: "dashboard" }
+      { label: "Est income", value: cashFlow.grossIncome, category: "income" },
+      { label: "Est payments", value: cashFlow.paymentTotal, category: "expenses" },
+      { label: "Est monthly net", value: cashFlow.monthlyNet, category: "dashboard" }
     ];
   }
 
@@ -550,7 +631,7 @@ function renderSummaryDetails() {
 function renderAllocation() {
   elements.allocationList.innerHTML = "";
   const groups = categories
-    .filter((category) => category.id !== "dashboard")
+    .filter((category) => category.id !== "dashboard" && !category.cashflow)
     .map((category, index) => {
       const holdings = state.holdings.filter((holding) => holding.category === category.id);
       const total = holdings.reduce((sum, holding) => sum + Math.abs(signedValue(holding) || 0), 0);
@@ -613,7 +694,10 @@ function setFieldVisibility(category) {
   const isCredit = category.id === "credit";
   const isLoan = category.id === "loans";
   const isAlt = category.id === "alts";
+  const isIncome = category.id === "income";
+  const isExpense = category.id === "expenses";
   const isDebt = category.id === "loans" || isCredit;
+  const isCashFlow = isIncome || isExpense;
   const canUseLocation = isTracked || isAlt;
 
   elements.symbolField.classList.toggle("hidden", !isTracked);
@@ -622,21 +706,25 @@ function setFieldVisibility(category) {
   elements.creditFields.classList.toggle("hidden", !isCredit);
   elements.loanFields.classList.toggle("hidden", !isLoan);
   elements.altFields.classList.toggle("hidden", !isAlt);
+  elements.incomeFields.classList.toggle("hidden", !isIncome);
+  elements.expenseFields.classList.toggle("hidden", !isExpense);
   setGroupEnabled(elements.cashFields, isCash);
   setGroupEnabled(elements.creditFields, isCredit);
   setGroupEnabled(elements.loanFields, isLoan);
   setGroupEnabled(elements.altFields, isAlt);
-  elements.quantityMode.classList.toggle("hidden", isCash || isCredit || isLoan);
+  setGroupEnabled(elements.incomeFields, isIncome);
+  setGroupEnabled(elements.expenseFields, isExpense);
+  elements.quantityMode.classList.toggle("hidden", isCash || isCredit || isLoan || isCashFlow);
   elements.costBasisMode.classList.toggle("hidden", !isTracked);
   elements.costPerUnitField.classList.toggle("hidden", !isTracked || new FormData(elements.form).get("costBasisMode") === "total");
-  elements.costTotalField.classList.toggle("hidden", isCash || isCredit || isLoan || (isTracked && new FormData(elements.form).get("costBasisMode") !== "total"));
-  elements.unitsField.classList.toggle("hidden", isCash || isCredit || isLoan || new FormData(elements.form).get("quantityMode") !== "units");
+  elements.costTotalField.classList.toggle("hidden", isCash || isCredit || isLoan || isCashFlow || (isTracked && new FormData(elements.form).get("costBasisMode") !== "total"));
+  elements.unitsField.classList.toggle("hidden", isCash || isCredit || isLoan || isCashFlow || new FormData(elements.form).get("quantityMode") !== "units");
   elements.amountField.classList.toggle("hidden", isTracked && new FormData(elements.form).get("quantityMode") !== "value");
   elements.accountLocationField.classList.toggle("hidden", !canUseLocation);
   elements.form.elements.accountLocation.disabled = !canUseLocation;
 
-  elements.amountLabel.textContent = isDebt ? "Total owed" : isCash ? "Current balance" : "Total dollar amount";
-  elements.nameLabel.textContent = isCash ? "Account nickname" : isCredit ? "Card name" : category.id === "loans" ? "Loan name" : isAlt ? "Item name" : "Name";
+  elements.amountLabel.textContent = isDebt ? "Total owed" : isCash ? "Current balance" : isIncome ? "Estimated monthly income" : isExpense ? "Monthly cost" : "Total dollar amount";
+  elements.nameLabel.textContent = isCash ? "Account nickname" : isCredit ? "Card name" : category.id === "loans" ? "Loan name" : isAlt ? "Item name" : isIncome ? "Income source" : isExpense ? "Expense name" : "Name";
   elements.amountModeLabel.textContent = isDebt ? "Total owed" : "Total dollar amount";
 }
 
@@ -665,7 +753,7 @@ function renderAssetForm() {
   elements.costPerUnitLabel.textContent = category.id === "stocks" ? "Cost basis per share" : "Cost basis per unit";
   elements.metricOneLabel.textContent = category.tracked ? "Daily move" : category.id === "credit" ? "Minimum payment" : "Type";
   elements.metricTwoLabel.textContent = category.tracked ? "Range move" : category.id === "credit" ? "Payoff time" : "Currency / APR";
-  elements.positionValueLabel.textContent = category.debt ? "Balance" : "Value";
+  elements.positionValueLabel.textContent = category.debt ? "Balance" : category.cashflow ? "Monthly amount" : "Value";
   setFieldVisibility(category);
 }
 
@@ -705,6 +793,8 @@ function populateForm(holding) {
   setFormValue("paymentsLeft", holding.paymentsLeft || "");
   setFormValue("nextDueDate", holding.nextDueDate);
   setFormValue("altType", holding.altType);
+  setFormValue("incomeType", holding.incomeType || "w2");
+  setFormValue("expenseType", holding.expenseType || "subscription");
   setFormValue("accountLocation", holding.accountLocation);
   setFormValue("tags", holding.tags);
   setFormValue("notes", holding.notes);
@@ -739,7 +829,7 @@ function renderHoldings() {
     row.className = `holding-row${holding.id === state.selectedId ? " active" : ""}`;
     row.style.setProperty("--holding-color", pieColors[index % pieColors.length]);
     const label = holding.symbol || holding.name;
-    const value = signedValue(holding);
+    const value = category.cashflow ? itemValue(holding) : signedValue(holding);
     const sub = holding.category === "cash" && holding.institution
       ? `${holding.institution} · ${holding.accountType || "account"}`
       : holding.name && holding.symbol ? holding.name : currency(Math.abs(value || 0), holding.currency);
@@ -799,7 +889,8 @@ function renderEmptyMarket(message = "Select an item to view details.") {
 function renderCategoryOverview() {
   const category = activeCategory();
   const holdings = currentHoldings();
-  const total = holdings.reduce((sum, holding) => sum + Math.abs(signedValue(holding) || 0), 0);
+  const cashFlowCategory = category.id === "income" || category.id === "expenses";
+  const total = holdings.reduce((sum, holding) => sum + (cashFlowCategory ? Math.abs(itemValue(holding) || 0) : Math.abs(signedValue(holding) || 0)), 0);
   const cost = holdings.reduce((sum, holding) => sum + (itemCost(holding) || 0), 0);
   const debts = category.debt;
   resetDetailPanels(false);
@@ -808,23 +899,25 @@ function renderCategoryOverview() {
   elements.selectedSummary.textContent = holdings.length
     ? `Combined ${category.label.toLowerCase()} view across ${holdings.length} item${holdings.length === 1 ? "" : "s"}.`
     : "Add an item from the form to start tracking this section.";
-  elements.valueLabel.textContent = debts ? "Total owed" : "Total value";
+  elements.valueLabel.textContent = debts ? "Total owed" : category.id === "income" ? "Monthly income" : category.id === "expenses" ? "Monthly expenses" : "Total value";
   elements.lastPrice.textContent = currency(total);
   elements.quoteMeta.textContent = holdings.length ? "Combined category total" : "No saved items";
-  elements.metricOneLabel.textContent = debts ? "Monthly minimum" : "Items";
-  elements.metricTwoLabel.textContent = "Cost basis";
+  elements.metricOneLabel.textContent = debts ? "Monthly minimum" : category.id === "income" ? "Est tax set-aside" : "Items";
+  elements.metricTwoLabel.textContent = category.id === "income" ? "Est net income" : "Cost basis";
   elements.unitsHeldLabel.textContent = "Tracked";
-  elements.positionValueLabel.textContent = debts ? "Debt total" : "Value total";
+  elements.positionValueLabel.textContent = debts ? "Debt total" : cashFlowCategory ? "Monthly total" : "Value total";
   elements.dayChange.classList.remove("positive", "negative");
   elements.weekChange.classList.remove("positive", "negative");
-  elements.dayChange.textContent = debts ? currency(holdings.reduce((sum, holding) => sum + debtPayment(holding), 0)) : number(holdings.length, 0);
-  elements.weekChange.textContent = cost ? currency(cost) : "--";
+  const incomeRows = monthlyIncomeRows();
+  const categoryTax = category.id === "income" ? incomeRows.reduce((sum, row) => sum + row.taxSetAside, 0) : 0;
+  elements.dayChange.textContent = debts ? currency(holdings.reduce((sum, holding) => sum + debtPayment(holding), 0)) : category.id === "income" ? currency(categoryTax) : number(holdings.length, 0);
+  elements.weekChange.textContent = category.id === "income" ? currency(total - categoryTax) : cost ? currency(cost) : "--";
   elements.sharesHeld.textContent = number(holdings.length, 0);
   elements.positionValue.textContent = currency(total);
   elements.manualTitle.textContent = `${category.label} breakdown`;
   elements.manualCaption.textContent = "Select an individual item when you want item-level performance, notes, or news.";
   elements.manualList.innerHTML = holdings.length
-    ? holdings.map((holding) => detailRow(holding.symbol || holding.name, currency(Math.abs(signedValue(holding) || 0), holding.currency))).join("")
+    ? holdings.map((holding) => detailRow(holding.symbol || holding.name, currency(cashFlowCategory ? Math.abs(itemValue(holding) || 0) : Math.abs(signedValue(holding) || 0), holding.currency))).join("")
     : "";
   if (!holdings.length) elements.manualList.append(emptyState("Nothing here yet", "Use the form to add the first item."));
 }
@@ -950,7 +1043,7 @@ function detailRow(label, value) {
 
 function renderManualDetails(holding) {
   const category = categoryMap[holding.category];
-  const value = Math.abs(signedValue(holding) || 0);
+  const value = Math.abs(category.cashflow ? itemValue(holding) || 0 : signedValue(holding) || 0);
   resetDetailPanels(false);
   elements.selectedTitle.textContent = holding.name || holding.symbol;
   elements.selectedSummary.textContent = holding.notes || `${category.label} item tracked manually.`;
@@ -996,6 +1089,29 @@ function renderManualDetails(holding) {
       detailRow("Payments left", holding.paymentsLeft ? number(holding.paymentsLeft, 0) : "--"),
       detailRow("Next due date", holding.nextDueDate),
       detailRow("Tags", holding.tags)
+    ];
+  } else if (holding.category === "income") {
+    const gross = Math.abs(itemValue(holding) || 0);
+    const incomeType = String(holding.incomeType || "").toLowerCase();
+    const taxSetAside = ["1099", "cash"].includes(incomeType) ? gross * 0.2 : 0;
+    elements.dayChange.textContent = holding.incomeType ? holding.incomeType.toUpperCase() : "--";
+    elements.weekChange.textContent = taxSetAside ? currency(taxSetAside, holding.currency) : "Review withholding";
+    rows = [
+      detailRow("Income type", holding.incomeType ? holding.incomeType.toUpperCase() : "--"),
+      detailRow("Estimated monthly income", currency(gross, holding.currency)),
+      detailRow("Rough tax reminder", taxSetAside ? `Consider setting aside ${currency(taxSetAside, holding.currency)} (20%)` : "W-2 withholding may already cover taxes"),
+      detailRow("Est net income", currency(gross - taxSetAside, holding.currency)),
+      detailRow("Tags", holding.tags),
+      detailRow("Notes", holding.notes)
+    ];
+  } else if (holding.category === "expenses") {
+    elements.dayChange.textContent = holding.expenseType || "--";
+    elements.weekChange.textContent = holding.currency || "USD";
+    rows = [
+      detailRow("Expense type", holding.expenseType),
+      detailRow("Monthly cost", currency(value, holding.currency)),
+      detailRow("Tags", holding.tags),
+      detailRow("Notes", holding.notes)
     ];
   } else {
     const cost = itemCost(holding);
@@ -1188,7 +1304,7 @@ elements.form.addEventListener("submit", async (event) => {
   const formData = new FormData(elements.form);
   const payload = Object.fromEntries(formData.entries());
   payload.symbol = (payload.symbol || "").toUpperCase();
-  if (["cash", "credit", "loans"].includes(state.activeTab)) payload.quantityMode = "value";
+  if (["cash", "credit", "loans", "income", "expenses"].includes(state.activeTab)) payload.quantityMode = "value";
   await api("/api/holdings", {
     method: "POST",
     body: JSON.stringify(payload)

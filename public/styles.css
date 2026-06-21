@@ -179,6 +179,13 @@ label {
   margin-bottom: 16px;
 }
 
+.topbar-actions {
+  display: flex;
+  gap: 10px;
+  align-items: start;
+  justify-content: flex-end;
+}
+
 .tabs {
   display: grid;
   gap: 8px;
@@ -267,11 +274,7 @@ h2 {
 }
 
 .overview-side {
-  display: grid;
-  grid-template-columns: minmax(320px, 1.2fr) minmax(240px, 0.8fr);
-  gap: 14px;
-  align-items: start;
-  min-width: min(680px, 58%);
+  min-width: min(880px, 68%);
 }
 
 .panel-header {
@@ -456,7 +459,7 @@ h2 {
 
 .financial-snapshot {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -883,6 +886,31 @@ h2 {
   align-content: start;
 }
 
+.topbar-attention {
+  position: relative;
+  min-width: 190px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.topbar-attention .attention-toggle {
+  width: 100%;
+}
+
+.topbar-attention .compact-news {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(360px, 90vw);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px;
+  box-shadow: var(--shadow);
+}
+
 .compact-news {
   gap: 8px;
 }
@@ -991,8 +1019,16 @@ h2 {
   }
 
   .overview-side {
-    grid-template-columns: 1fr;
     min-width: 0;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .topbar-actions > * {
+    flex: 1;
   }
 
   .field-grid,
