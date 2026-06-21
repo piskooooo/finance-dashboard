@@ -79,7 +79,7 @@ function cleanSymbol(input) {
 
 function cleanCategory(input) {
   const value = String(input || "stocks").trim().toLowerCase();
-  return ["stocks", "crypto", "commodities", "alts", "credit", "loans", "cash", "income", "expenses"].includes(value) ? value : "stocks";
+  return ["stocks", "crypto", "commodities", "alts", "properties", "credit", "loans", "cash", "income", "expenses"].includes(value) ? value : "stocks";
 }
 
 function makeId(input) {
@@ -122,12 +122,16 @@ function normalizeHoldingRecord(input) {
     accountType: String(input.accountType || "").trim(),
     apy: Number(input.apy || input.loanApy || 0),
     cardType: String(input.cardType || "").trim(),
+    creditLimit: Number(input.creditLimit || 0),
     minimumPayment: Number(input.minimumPayment || 0),
     loanType: String(input.loanType || "").trim(),
     paymentAmount: Number(input.paymentAmount || 0),
     paymentsLeft: Number(input.paymentsLeft || 0),
     nextDueDate: String(input.nextDueDate || "").trim(),
     altType: String(input.altType || "").trim(),
+    propertyType: String(input.propertyType || "").trim(),
+    propertyValue: Number(input.propertyValue || 0),
+    mortgageBalance: Number(input.mortgageBalance || 0),
     incomeType: String(input.incomeType || "").trim(),
     expenseType: String(input.expenseType || "").trim(),
     accountLocation: String(input.accountLocation || "").trim(),

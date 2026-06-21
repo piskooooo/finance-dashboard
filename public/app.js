@@ -4,6 +4,7 @@ const categories = [
   { id: "crypto", label: "Crypto", singular: "crypto asset", tracked: true, units: "Coins / tokens", examples: "BTC-USD, ETH-USD, SOL-USD" },
   { id: "commodities", label: "Commodities", singular: "commodity", tracked: true, units: "Units", examples: "GC=F, GLD, SLV, USO" },
   { id: "alts", label: "Alt investments", singular: "alt investment", tracked: false, units: "Items" },
+  { id: "properties", label: "Properties", singular: "property", tracked: false, units: "Properties" },
   { id: "credit", label: "Credit", singular: "card", tracked: false, debt: true, units: "Cards" },
   { id: "loans", label: "Loans", singular: "loan", tracked: false, debt: true, units: "Loans" },
   { id: "cash", label: "Cash", singular: "cash account", tracked: false, units: "Accounts" },
@@ -90,6 +91,7 @@ const elements = {
   creditFields: document.querySelector("#creditFields"),
   loanFields: document.querySelector("#loanFields"),
   altFields: document.querySelector("#altFields"),
+  propertyFields: document.querySelector("#propertyFields"),
   incomeFields: document.querySelector("#incomeFields"),
   expenseFields: document.querySelector("#expenseFields"),
   accountLocationField: document.querySelector("#accountLocationField"),
@@ -199,12 +201,16 @@ function normalizeHolding(holding) {
     accountType: holding.accountType || "",
     apy: Number(holding.apy || 0),
     cardType: holding.cardType || "",
+    creditLimit: Number(holding.creditLimit || 0),
     minimumPayment: Number(holding.minimumPayment || 0),
     loanType: holding.loanType || "",
     paymentAmount: Number(holding.paymentAmount || 0),
     paymentsLeft: Number(holding.paymentsLeft || 0),
     nextDueDate: holding.nextDueDate || "",
     altType: holding.altType || "",
+    propertyType: holding.propertyType || "",
+    propertyValue: Number(holding.propertyValue || 0),
+    mortgageBalance: Number(holding.mortgageBalance || 0),
     incomeType: holding.incomeType || "",
     expenseType: holding.expenseType || "",
     accountLocation: holding.accountLocation || "",
@@ -237,6 +243,10 @@ function itemValue(holding) {
   const market = marketFor(holding);
   const price = market?.quote?.price;
 
+  if (holding.category === "properties") {
+    if (holding.propertyValue || holding.mortgageBalance) return holding.propertyValue - holding.mortgageBalance;
+    if (holding.amount > 0) return holding.amount;
+  }
   if (holding.quantityMode === "units" && Number.isFinite(price) && holding.units > 0) return holding.units * price;
   if (holding.quantityMode === "value" && holding.amount > 0) return holding.amount;
   if (!categoryMap[holding.category]?.tracked && holding.amount > 0) return holding.amount;
@@ -694,11 +704,12 @@ function setFieldVisibility(category) {
   const isCredit = category.id === "credit";
   const isLoan = category.id === "loans";
   const isAlt = category.id === "alts";
+  const isProperty = category.id === "properties";
   const isIncome = category.id === "income";
   const isExpense = category.id === "expenses";
   const isDebt = category.id === "loans" || isCredit;
   const isCashFlow = isIncome || isExpense;
-  const canUseLocation = isTracked || isAlt;
+  const canUseLocation = isTracked || isAlt || isProperty;
 
   elements.symbolField.classList.toggle("hidden", !isTracked);
   elements.symbolInput.required = isTracked;
@@ -706,25 +717,27 @@ function setFieldVisibility(category) {
   elements.creditFields.classList.toggle("hidden", !isCredit);
   elements.loanFields.classList.toggle("hidden", !isLoan);
   elements.altFields.classList.toggle("hidden", !isAlt);
+  elements.propertyFields.classList.toggle("hidden", !isProperty);
   elements.incomeFields.classList.toggle("hidden", !isIncome);
   elements.expenseFields.classList.toggle("hidden", !isExpense);
   setGroupEnabled(elements.cashFields, isCash);
   setGroupEnabled(elements.creditFields, isCredit);
   setGroupEnabled(elements.loanFields, isLoan);
   setGroupEnabled(elements.altFields, isAlt);
+  setGroupEnabled(elements.propertyFields, isProperty);
   setGroupEnabled(elements.incomeFields, isIncome);
   setGroupEnabled(elements.expenseFields, isExpense);
-  elements.quantityMode.classList.toggle("hidden", isCash || isCredit || isLoan || isCashFlow);
+  elements.quantityMode.classList.toggle("hidden", isCash || isCredit || isLoan || isProperty || isCashFlow);
   elements.costBasisMode.classList.toggle("hidden", !isTracked);
   elements.costPerUnitField.classList.toggle("hidden", !isTracked || new FormData(elements.form).get("costBasisMode") === "total");
-  elements.costTotalField.classList.toggle("hidden", isCash || isCredit || isLoan || isCashFlow || (isTracked && new FormData(elements.form).get("costBasisMode") !== "total"));
-  elements.unitsField.classList.toggle("hidden", isCash || isCredit || isLoan || isCashFlow || new FormData(elements.form).get("quantityMode") !== "units");
-  elements.amountField.classList.toggle("hidden", isTracked && new FormData(elements.form).get("quantityMode") !== "value");
+  elements.costTotalField.classList.toggle("hidden", isCash || isCredit || isLoan || isProperty || isCashFlow || (isTracked && new FormData(elements.form).get("costBasisMode") !== "total"));
+  elements.unitsField.classList.toggle("hidden", isCash || isCredit || isLoan || isProperty || isCashFlow || new FormData(elements.form).get("quantityMode") !== "units");
+  elements.amountField.classList.toggle("hidden", isProperty || (isTracked && new FormData(elements.form).get("quantityMode") !== "value"));
   elements.accountLocationField.classList.toggle("hidden", !canUseLocation);
   elements.form.elements.accountLocation.disabled = !canUseLocation;
 
   elements.amountLabel.textContent = isDebt ? "Total owed" : isCash ? "Current balance" : isIncome ? "Estimated monthly income" : isExpense ? "Monthly cost" : "Total dollar amount";
-  elements.nameLabel.textContent = isCash ? "Account nickname" : isCredit ? "Card name" : category.id === "loans" ? "Loan name" : isAlt ? "Item name" : isIncome ? "Income source" : isExpense ? "Expense name" : "Name";
+  elements.nameLabel.textContent = isCash ? "Account nickname" : isCredit ? "Card name" : category.id === "loans" ? "Loan name" : isAlt ? "Item name" : isProperty ? "Property name" : isIncome ? "Income source" : isExpense ? "Expense name" : "Name";
   elements.amountModeLabel.textContent = isDebt ? "Total owed" : "Total dollar amount";
 }
 
@@ -749,11 +762,11 @@ function renderAssetForm() {
   elements.unitsHeldLabel.textContent = category.units;
   elements.listTitle.textContent = category.label;
   elements.selectedEyebrow.textContent = `Selected ${category.singular}`;
-  elements.valueLabel.textContent = category.debt ? "Balance owed" : "Estimated value";
+  elements.valueLabel.textContent = category.debt ? "Balance owed" : category.id === "properties" ? "Estimated equity" : "Estimated value";
   elements.costPerUnitLabel.textContent = category.id === "stocks" ? "Cost basis per share" : "Cost basis per unit";
   elements.metricOneLabel.textContent = category.tracked ? "Daily move" : category.id === "credit" ? "Minimum payment" : "Type";
-  elements.metricTwoLabel.textContent = category.tracked ? "Range move" : category.id === "credit" ? "Payoff time" : "Currency / APR";
-  elements.positionValueLabel.textContent = category.debt ? "Balance" : category.cashflow ? "Monthly amount" : "Value";
+  elements.metricTwoLabel.textContent = category.tracked ? "Range move" : category.id === "credit" ? "Payoff time" : category.id === "properties" ? "Mortgage balance" : "Currency / APR";
+  elements.positionValueLabel.textContent = category.debt ? "Balance" : category.cashflow ? "Monthly amount" : category.id === "properties" ? "Equity" : "Value";
   setFieldVisibility(category);
 }
 
@@ -787,12 +800,16 @@ function populateForm(holding) {
   setFormValue("apy", holding.apy || "");
   setFormValue("loanApy", holding.apy || "");
   setFormValue("cardType", holding.cardType || "credit");
+  setFormValue("creditLimit", holding.creditLimit || "");
   setFormValue("minimumPayment", holding.minimumPayment || "");
   setFormValue("loanType", holding.loanType || "auto");
   setFormValue("paymentAmount", holding.paymentAmount || "");
   setFormValue("paymentsLeft", holding.paymentsLeft || "");
   setFormValue("nextDueDate", holding.nextDueDate);
   setFormValue("altType", holding.altType);
+  setFormValue("propertyType", holding.propertyType || "primary");
+  setFormValue("propertyValue", holding.propertyValue || "");
+  setFormValue("mortgageBalance", holding.mortgageBalance || "");
   setFormValue("incomeType", holding.incomeType || "w2");
   setFormValue("expenseType", holding.expenseType || "subscription");
   setFormValue("accountLocation", holding.accountLocation);
@@ -1068,15 +1085,33 @@ function renderManualDetails(holding) {
     ];
   } else if (holding.category === "credit") {
     const estimate = creditEstimate(holding);
+    const availableCredit = holding.creditLimit > 0 ? holding.creditLimit - value : null;
+    const utilization = holding.creditLimit > 0 ? (value / holding.creditLimit) * 100 : null;
     elements.dayChange.textContent = currency(estimate.minimum, holding.currency);
     elements.weekChange.textContent = estimate.months === Infinity ? "No payoff" : estimate.months ? `${estimate.months} mo` : "--";
     rows = [
       detailRow("Card type", holding.cardType === "charge" ? "Charge card" : "Credit card"),
       detailRow("APR", `${number(holding.apy, 2)}%`),
+      detailRow("Credit limit", holding.creditLimit ? currency(holding.creditLimit, holding.currency) : "--"),
+      detailRow("Available credit", Number.isFinite(availableCredit) ? currency(availableCredit, holding.currency) : "--"),
+      detailRow("Utilization", Number.isFinite(utilization) ? `${number(utilization, 2)}%` : "--"),
       detailRow("Estimated minimum", currency(estimate.minimum, holding.currency)),
       detailRow("Minimum-only payoff", estimate.months === Infinity ? "Minimum is below monthly interest" : estimate.months ? `${estimate.months} months` : "--"),
       detailRow("Estimated interest", estimate.interest === Infinity ? "Balance will grow" : currency(estimate.interest, holding.currency)),
       detailRow("Tags", holding.tags)
+    ];
+  } else if (holding.category === "properties") {
+    const equity = itemValue(holding);
+    elements.dayChange.textContent = holding.propertyType || "--";
+    elements.weekChange.textContent = holding.mortgageBalance ? currency(holding.mortgageBalance, holding.currency) : "--";
+    rows = [
+      detailRow("Property type", holding.propertyType),
+      detailRow("Estimated property value", holding.propertyValue ? currency(holding.propertyValue, holding.currency) : "--"),
+      detailRow("Mortgage / loan balance", holding.mortgageBalance ? currency(holding.mortgageBalance, holding.currency) : "--"),
+      detailRow("Estimated equity", Number.isFinite(equity) ? currency(equity, holding.currency) : "--"),
+      detailRow("Location / account", holding.accountLocation),
+      detailRow("Tags", holding.tags),
+      detailRow("Notes", holding.notes)
     ];
   } else if (holding.category === "loans") {
     elements.dayChange.textContent = holding.loanType || "--";
@@ -1304,7 +1339,7 @@ elements.form.addEventListener("submit", async (event) => {
   const formData = new FormData(elements.form);
   const payload = Object.fromEntries(formData.entries());
   payload.symbol = (payload.symbol || "").toUpperCase();
-  if (["cash", "credit", "loans", "income", "expenses"].includes(state.activeTab)) payload.quantityMode = "value";
+  if (["cash", "credit", "loans", "properties", "income", "expenses"].includes(state.activeTab)) payload.quantityMode = "value";
   await api("/api/holdings", {
     method: "POST",
     body: JSON.stringify(payload)

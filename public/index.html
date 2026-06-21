@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Finance Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260621-1" />
+    <link rel="stylesheet" href="/styles.css?v=20260621-2" />
   </head>
   <body>
     <main class="app-shell">
@@ -194,10 +194,16 @@
                     <input name="apy" type="number" step="0.01" min="0" placeholder="24.99" />
                   </label>
                 </div>
-                <label>
-                  Last minimum payment
-                  <input name="minimumPayment" type="number" step="0.01" min="0" placeholder="125.00" />
-                </label>
+                <div class="field-grid">
+                  <label>
+                    Credit limit
+                    <input name="creditLimit" type="number" step="0.01" min="0" placeholder="15000.00" />
+                  </label>
+                  <label>
+                    Last minimum payment
+                    <input name="minimumPayment" type="number" step="0.01" min="0" placeholder="125.00" />
+                  </label>
+                </div>
               </div>
 
               <div id="loanFields" class="category-fields hidden">
@@ -238,6 +244,29 @@
                   Type
                   <input name="altType" placeholder="Trading card, watch, video game, art..." />
                 </label>
+              </div>
+
+              <div id="propertyFields" class="category-fields hidden">
+                <label>
+                  Property type
+                  <select name="propertyType">
+                    <option value="primary">Primary home</option>
+                    <option value="rental">Rental</option>
+                    <option value="vacation">Vacation home</option>
+                    <option value="land">Land</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <div class="field-grid">
+                  <label>
+                    Estimated property value
+                    <input name="propertyValue" type="number" step="0.01" min="0" placeholder="450000.00" />
+                  </label>
+                  <label>
+                    Mortgage / loan balance
+                    <input name="mortgageBalance" type="number" step="0.01" min="0" placeholder="320000.00" />
+                  </label>
+                </div>
               </div>
 
               <div id="incomeFields" class="category-fields hidden">
@@ -400,6 +429,6 @@
       </div>
     </template>
 
-    <script src="/app.js?v=20260621-1"></script>
+    <script src="/app.js?v=20260621-2"></script>
   </body>
 </html>
