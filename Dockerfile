@@ -3,9 +3,12 @@ FROM node:20-alpine
 WORKDIR /app
 
 LABEL org.opencontainers.image.title="Finance Dashboard"
-LABEL org.opencontainers.image.description="Self-hosted dashboard for manually tracked stock holdings."
+LABEL org.opencontainers.image.description="Self-hosted dashboard for manually tracked finances."
 
-COPY --chown=node:node package.json server.js ./
+COPY --chown=node:node package*.json ./
+RUN npm ci --omit=dev
+
+COPY --chown=node:node server.js ./
 COPY --chown=node:node public ./public
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN apk add --no-cache libcap su-exec \

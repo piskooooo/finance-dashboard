@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { URL } = require("node:url");
+const ExcelJS = require("exceljs");
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -108,6 +109,21 @@ async function readBody(req) {
   }
 }
 
+async function readRawBody(req, maxBytes = 20 * 1024 * 1024) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      const err = new Error("Uploaded file is too large.");
+      err.status = 413;
+      throw err;
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 function cleanSymbol(input) {
   return String(input || "")
     .trim()
@@ -116,6 +132,14 @@ function cleanSymbol(input) {
 }
 
 function cleanUsername(input) {
+  return String(input || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9.@_-]/g, "")
+    .slice(0, 64);
+}
+
+function legacyCleanUsername(input) {
   return String(input || "")
     .trim()
     .toLowerCase()
@@ -288,6 +312,199 @@ function normalizeHolding(input) {
   }
 
   return normalizeHoldingRecord({ ...input, category, symbol, name, updatedAt: new Date().toISOString() });
+}
+
+function workbookCell(sheet, address) {
+  const value = sheet.getCell(address).value;
+  if (value == null) return "";
+  if (typeof value === "object") {
+    if (Object.prototype.hasOwnProperty.call(value, "result")) return value.result ?? "";
+    if (Array.isArray(value.richText)) return value.richText.map((part) => part.text || "").join("");
+    if (Object.prototype.hasOwnProperty.call(value, "text")) return value.text ?? "";
+  }
+  return value;
+}
+
+function numericCell(sheet, address) {
+  const value = Number(workbookCell(sheet, address));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function expenseTypeForImport(prefix, name) {
+  const upper = String(name || "").toUpperCase();
+  if (prefix === "SB") return "business";
+  if (prefix === "CD") return "debt-payment";
+  if (prefix === "SC") return "loan-payment";
+  if (upper.includes("INSURANCE")) return "insurance";
+  if (upper.includes("TAX")) return "tax";
+  if (upper.includes("CAR GAS") || upper.includes("CAR WASH")) return "transportation";
+  if (upper.includes("SPOTIFY") || upper.includes("TWITCH") || upper.includes("AMAZON") || upper.includes("SUBSCRIPTION")) return "subscription";
+  return "other";
+}
+
+function loanTypeForImport(name) {
+  const upper = String(name || "").toUpperCase();
+  if (upper.includes("CAR")) return "auto";
+  if (upper.includes("MORTGAGE")) return "mortgage";
+  if (upper.includes("STUDENT")) return "student";
+  if (upper.includes("LOAN")) return "personal";
+  return "other";
+}
+
+function budgetImportExpenseRecord(year, row, rawName, amount) {
+  const [rawPrefix, ...rest] = String(rawName || "").split(" - ");
+  const prefix = rest.length ? rawPrefix.trim().toUpperCase() : "";
+  const name = (rest.length ? rest.join(" - ") : rawName).trim();
+  const base = {
+    quantityMode: "value",
+    currency: "USD",
+    tags: `budget-import,${year}${prefix ? `,${prefix.toLowerCase()}` : ""}`,
+    notes: `Imported from Budget.xlsx Budget tab row ${row} for the ${year} budget plan.`,
+    updatedAt: new Date().toISOString()
+  };
+
+  if (prefix === "CD") {
+    return {
+      ...base,
+      id: `budget-${year}-credit-${makeId(name)}`,
+      category: "credit",
+      name,
+      amount: 0,
+      cardType: "credit",
+      minimumPayment: amount
+    };
+  }
+
+  if (prefix === "SC") {
+    return {
+      ...base,
+      id: `budget-${year}-loan-${makeId(name)}`,
+      category: "loans",
+      name,
+      amount: 0,
+      loanType: loanTypeForImport(name),
+      paymentAmount: amount
+    };
+  }
+
+  return {
+    ...base,
+    id: `budget-${year}-expense-${makeId(name)}`,
+    category: "expenses",
+    name,
+    amount,
+    expenseType: expenseTypeForImport(prefix, name),
+    accountUse: prefix === "SB" ? "business" : "personal"
+  };
+}
+
+function budgetImportIncomeRecords(sheet, year) {
+  const blocks = {
+    2022: { headerRow: 1, subtotalRow: 14, sourceCols: ["C", "D", "E", "F", "G", "H", "I"] },
+    2023: { headerRow: 1, subtotalRow: 14, sourceCols: ["O", "P", "Q", "R", "S", "T", "U"] },
+    2024: { headerRow: 15, subtotalRow: 28, sourceCols: ["C", "D", "E", "F", "G", "H", "I"] },
+    2025: { headerRow: 15, subtotalRow: 28, sourceCols: ["O", "P", "Q", "R", "S", "T", "U"] },
+    2026: { headerRow: 29, subtotalRow: 42, sourceCols: ["C", "D", "E", "F", "G", "H", "I"] },
+    2027: { headerRow: 29, subtotalRow: 42, sourceCols: ["O", "P", "Q", "R", "S", "T", "U"] },
+    2028: { headerRow: 43, subtotalRow: 56, sourceCols: ["C", "D", "E", "F", "G", "H", "I"] },
+    2029: { headerRow: 43, subtotalRow: 56, sourceCols: ["O", "P", "Q", "R", "S", "T", "U"] }
+  };
+  const block = blocks[year];
+  if (!block) return [];
+
+  return block.sourceCols
+    .map((col) => {
+      const source = String(workbookCell(sheet, `${col}${block.headerRow}`) || "").trim();
+      const annual = numericCell(sheet, `${col}${block.subtotalRow}`);
+      if (!source || annual <= 0) return null;
+      return {
+        id: `budget-${year}-income-${makeId(source)}`,
+        category: "income",
+        name: `${source} (${year} budget)`,
+        quantityMode: "value",
+        amount: annual / 12,
+        currency: "USD",
+        incomeType: "1099",
+        tags: `budget-import,${year},income`,
+        notes: `Imported from Budget.xlsx Budget tab. Planned annual gross for ${year}: ${annual.toFixed(2)}.`,
+        updatedAt: new Date().toISOString()
+      };
+    })
+    .filter(Boolean);
+}
+
+function budgetImportExpenseRecords(sheet, year) {
+  const blocks = {
+    2026: { nameCol: "A", amountCol: "B" },
+    2027: { nameCol: "I", amountCol: "J" },
+    2028: { nameCol: "Q", amountCol: "R" }
+  };
+  const block = blocks[year];
+  if (!block) return [];
+
+  const records = [];
+  for (let row = 59; row <= 95; row += 1) {
+    const name = String(workbookCell(sheet, `${block.nameCol}${row}`) || "").trim();
+    const amount = numericCell(sheet, `${block.amountCol}${row}`);
+    if (!name || amount <= 0) continue;
+    records.push(budgetImportExpenseRecord(year, row, name, amount));
+  }
+  return records;
+}
+
+async function parseBudgetWorkbook(buffer, year) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.getWorksheet("Budget") || workbook.worksheets[0];
+  if (!sheet) {
+    const err = new Error("No Budget sheet was found in the workbook.");
+    err.status = 400;
+    throw err;
+  }
+
+  const selectedYear = Number(year) || new Date().getFullYear();
+  const records = [
+    ...budgetImportIncomeRecords(sheet, selectedYear),
+    ...budgetImportExpenseRecords(sheet, selectedYear)
+  ].map(normalizeHoldingRecord);
+
+  if (!records.length) {
+    const err = new Error(`No importable Budget rows were found for ${selectedYear}.`);
+    err.status = 400;
+    throw err;
+  }
+
+  return { year: selectedYear, records };
+}
+
+async function importBudgetWorkbook(user, buffer, year) {
+  const parsed = await parseBudgetWorkbook(buffer, year);
+  const holdings = (await readHoldings(user)).map(normalizeHoldingRecord);
+  let created = 0;
+  let updated = 0;
+
+  for (const record of parsed.records) {
+    const existing = holdings.findIndex((holding) => holding.id === record.id);
+    if (existing >= 0) {
+      holdings[existing] = { ...holdings[existing], ...record, createdAt: holdings[existing].createdAt };
+      updated += 1;
+    } else {
+      holdings.push({ ...record, createdAt: new Date().toISOString() });
+      created += 1;
+    }
+  }
+
+  await writeHoldings(user, holdings.sort((a, b) => a.category.localeCompare(b.category) || (a.symbol || a.name).localeCompare(b.symbol || b.name)));
+  return {
+    year: parsed.year,
+    created,
+    updated,
+    total: parsed.records.length,
+    categories: parsed.records.reduce((counts, record) => {
+      counts[record.category] = (counts[record.category] || 0) + 1;
+      return counts;
+    }, {})
+  };
 }
 
 function stooqSymbol(symbol) {
@@ -615,10 +832,15 @@ async function handleAuthApi(req, res, url) {
   if (url.pathname === "/api/auth/login" && req.method === "POST") {
     const body = await readBody(req);
     const username = cleanUsername(body.username);
+    const legacyUsername = legacyCleanUsername(body.username);
     const users = await readUsers();
-    const user = users.find((item) => item.username === username);
+    const user = users.find((item) => item.username === username || item.username === legacyUsername);
     if (!user || !verifyPassword(body.password, user.passwordHash)) {
       return sendJson(res, 401, { error: "Incorrect username or password." });
+    }
+    if (username.includes("@") && user.username === legacyUsername && user.username !== username) {
+      user.username = username;
+      await writeUsers(users);
     }
 
     const token = makeSession(user);
@@ -643,6 +865,12 @@ async function handleApi(req, res, url, user) {
 
   if (url.pathname === "/api/holdings" && req.method === "GET") {
     return sendJson(res, 200, (await readHoldings(user)).map(normalizeHoldingRecord));
+  }
+
+  if (url.pathname === "/api/import/budget" && req.method === "POST") {
+    const buffer = await readRawBody(req);
+    const result = await importBudgetWorkbook(user, buffer, url.searchParams.get("year"));
+    return sendJson(res, 200, { ...result, user: publicUser(user) });
   }
 
   if (url.pathname === "/api/holdings" && req.method === "POST") {

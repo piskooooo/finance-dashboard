@@ -6,6 +6,7 @@ A small self-hosted dashboard for manually entered finances. It stores account d
 
 - Add, update, select, and remove stock holdings manually.
 - Create a local login on first run and keep each user's finance data in private server-side JSON files.
+- Import the current-year plan from a `Budget.xlsx` workbook while logged in; imported rows are saved to that account only.
 - View a selected stock's last quote, daily move, weekly move, 30-day price line, and estimated position value.
 - See recent news articles for the selected ticker.
 - Read an auto-generated daily/weekly summary based on recent performance and the top returned article.
@@ -86,6 +87,19 @@ users/<username>/holdings.json
 ```
 
 Older single-user installs used `holdings.json` at the root of the data folder. When you create the first login, the app copies those older holdings into the new account folder if it finds them. Keep the `DATA_PATH` mapped to appdata on Unraid before updating the container, because GitHub and the Docker image do not contain your private data.
+
+## Budget spreadsheet import
+
+When logged in, use `Import Budget.xlsx` in the top bar to upload a local workbook. The importer reads the `Budget` sheet for the current year and saves the generated rows into the logged-in account's private data file.
+
+Current import mapping:
+
+- Income source subtotals become monthly `Income` records.
+- `CA`, `CC`, and `SB` planned monthly rows become `Expenses`.
+- `CD` rows become credit-card debt payment records.
+- `SC` rows become loan payment records.
+
+The workbook file and imported account data are runtime data only. They stay in `DATA_PATH`, are ignored by Git, and are not included in the public GitHub repository or Docker image.
 
 ## GitHub setup
 

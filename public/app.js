@@ -66,6 +66,8 @@ const elements = {
   authSubmit: document.querySelector("#authSubmit"),
   sessionUser: document.querySelector("#sessionUser"),
   logoutButton: document.querySelector("#logoutButton"),
+  budgetImportInput: document.querySelector("#budgetImportInput"),
+  importStatus: document.querySelector("#importStatus"),
   tabs: document.querySelector("#assetTabs"),
   sectionEyebrow: document.querySelector("#sectionEyebrow"),
   sectionTitle: document.querySelector("#sectionTitle"),
@@ -1083,7 +1085,7 @@ function renderNews(news) {
 function creditEstimate(holding) {
   const balance = Math.abs(itemValue(holding) || 0);
   const apr = Math.max(holding.apy || 0, 0);
-  if (!balance) return { minimum: 0, months: 0, interest: 0 };
+  if (!balance) return { minimum: holding.minimumPayment > 0 ? holding.minimumPayment : 0, months: 0, interest: 0 };
   if (holding.cardType === "charge") return { minimum: balance, months: 1, interest: 0 };
   const monthlyRate = apr / 100 / 12;
   const minimum = holding.minimumPayment > 0 ? holding.minimumPayment : Math.max(balance * 0.03, 25, balance * monthlyRate + balance * 0.01);
@@ -1450,8 +1452,36 @@ elements.logoutButton.addEventListener("click", async () => {
   state.holdings = [];
   state.selectedId = null;
   state.markets.clear();
+  elements.importStatus.textContent = "";
   elements.authForm.reset();
   showAuth({ hasUsers: true, message: "Logged out." });
+});
+
+elements.budgetImportInput.addEventListener("change", async () => {
+  const file = elements.budgetImportInput.files?.[0];
+  if (!file) return;
+  elements.importStatus.textContent = "Importing budget...";
+  elements.budgetImportInput.disabled = true;
+
+  try {
+    const year = new Date().getFullYear();
+    const response = await fetch(`/api/import/budget?year=${encodeURIComponent(year)}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      },
+      body: file
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Budget import failed.");
+    await loadHoldings();
+    elements.importStatus.textContent = `Imported ${result.total} ${result.year} budget rows for ${result.user?.username || "this account"}.`;
+  } catch (error) {
+    elements.importStatus.textContent = error.message;
+  } finally {
+    elements.budgetImportInput.value = "";
+    elements.budgetImportInput.disabled = false;
+  }
 });
 
 async function initialize() {

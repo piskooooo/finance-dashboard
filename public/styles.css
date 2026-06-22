@@ -121,6 +121,26 @@ button.secondary {
   color: var(--brand-strong);
 }
 
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.35rem;
+  border: 1px solid var(--brand-ring);
+  border-radius: 8px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  padding: var(--control-pad-y) var(--control-pad-x);
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.15;
+  cursor: pointer;
+}
+
+.file-button input {
+  display: none;
+}
+
 button.danger {
   border-color: rgba(225, 138, 104, 0.28);
   background: rgba(225, 138, 104, 0.1);
@@ -231,6 +251,14 @@ label {
   align-self: center;
   color: var(--muted);
   font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.import-status {
+  align-self: center;
+  max-width: 260px;
+  color: var(--muted);
+  font-size: 0.78rem;
   font-weight: 800;
 }
 
