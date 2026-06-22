@@ -1,10 +1,11 @@
 # Finance Dashboard
 
-A small self-hosted dashboard for manually entered stock holdings. It stores your holdings locally in `data/holdings.json`, fetches quote/history data from Yahoo Finance with a Stooq fallback, and fetches stock-specific news from Yahoo Finance RSS.
+A small self-hosted dashboard for manually entered finances. It stores account data locally in the mounted `data` folder, fetches quote/history data from Yahoo Finance with a Stooq fallback, and fetches stock-specific news from Yahoo Finance RSS.
 
 ## What works now
 
 - Add, update, select, and remove stock holdings manually.
+- Create a local login on first run and keep each user's finance data in private server-side JSON files.
 - View a selected stock's last quote, daily move, weekly move, 30-day price line, and estimated position value.
 - See recent news articles for the selected ticker.
 - Read an auto-generated daily/weekly summary based on recent performance and the top returned article.
@@ -17,6 +18,8 @@ npm run dev
 ```
 
 Open `http://localhost:3000`.
+
+On first launch, create the local dashboard account from the login screen. If an older `data/holdings.json` exists, its records are copied into the first account automatically.
 
 ## Docker Compose from source
 
@@ -71,6 +74,19 @@ For Unraid, the cleanest setup is:
 
 The container exposes port `3000` internally by default. If your Unraid template is easier to set up as `9999:80`, set `PORT=80`; the image supports binding to port 80 while still running the app as `PUID:PGID`.
 
+## Login and data persistence
+
+The app uses a local first-run account setup. There is no external auth provider and no cloud account.
+
+Runtime files live under the Docker-mounted `DATA_PATH`:
+
+```text
+users.json
+users/<username>/holdings.json
+```
+
+Older single-user installs used `holdings.json` at the root of the data folder. When you create the first login, the app copies those older holdings into the new account folder if it finds them. Keep the `DATA_PATH` mapped to appdata on Unraid before updating the container, because GitHub and the Docker image do not contain your private data.
+
 ## GitHub setup
 
 From this folder:
@@ -105,7 +121,7 @@ Those providers can rate limit or change behavior. The server keeps provider acc
 
 ## Next upgrades
 
-- Add authentication before exposing beyond your LAN.
+- Add spreadsheet import mapping for the `Budget` tab.
 - Add scheduled daily or weekly snapshots in a local database.
 - Add portfolio-level allocation and gain/loss views.
 - Add email, Discord, or ntfy weekly summaries.

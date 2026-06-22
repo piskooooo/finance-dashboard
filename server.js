@@ -1,4 +1,5 @@
 const http = require("node:http");
+const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { URL } = require("node:url");
@@ -7,11 +8,15 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const HOLDINGS_FILE = path.join(DATA_DIR, "holdings.json");
+const USERS_FILE = path.join(DATA_DIR, "users.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 15 * 60 * 1000);
+const SESSION_COOKIE = "finance_session";
+const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS || 1000 * 60 * 60 * 24 * 14);
 
 const marketCache = new Map();
 const searchCache = new Map();
+const sessions = new Map();
 
 const TRACKED_CATEGORIES = new Set(["stocks", "crypto", "commodities"]);
 
@@ -31,17 +36,50 @@ async function ensureStorage() {
   } catch {
     await fs.writeFile(HOLDINGS_FILE, "[]\n");
   }
+  try {
+    await fs.access(USERS_FILE);
+  } catch {
+    await fs.writeFile(USERS_FILE, "[]\n");
+  }
 }
 
-async function readHoldings() {
+function userDataDir(user) {
+  return path.join(DATA_DIR, "users", user.id);
+}
+
+function userHoldingsFile(user) {
+  return path.join(userDataDir(user), "holdings.json");
+}
+
+async function ensureUserStorage(user) {
+  await fs.mkdir(userDataDir(user), { recursive: true });
+  try {
+    await fs.access(userHoldingsFile(user));
+  } catch {
+    await fs.writeFile(userHoldingsFile(user), "[]\n");
+  }
+}
+
+async function readUsers() {
   await ensureStorage();
-  const raw = await fs.readFile(HOLDINGS_FILE, "utf8");
+  const raw = await fs.readFile(USERS_FILE, "utf8");
   return JSON.parse(raw);
 }
 
-async function writeHoldings(holdings) {
+async function writeUsers(users) {
   await ensureStorage();
-  await fs.writeFile(HOLDINGS_FILE, `${JSON.stringify(holdings, null, 2)}\n`);
+  await fs.writeFile(USERS_FILE, `${JSON.stringify(users, null, 2)}\n`);
+}
+
+async function readHoldings(user) {
+  await ensureUserStorage(user);
+  const raw = await fs.readFile(userHoldingsFile(user), "utf8");
+  return JSON.parse(raw);
+}
+
+async function writeHoldings(user, holdings) {
+  await ensureUserStorage(user);
+  await fs.writeFile(userHoldingsFile(user), `${JSON.stringify(holdings, null, 2)}\n`);
 }
 
 function sendJson(res, status, payload) {
@@ -75,6 +113,98 @@ function cleanSymbol(input) {
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9.^=-]/g, "");
+}
+
+function cleanUsername(input) {
+  return String(input || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "")
+    .slice(0, 64);
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+  const hash = crypto.scryptSync(String(password || ""), salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  const [salt, hash] = String(stored || "").split(":");
+  if (!salt || !hash) return false;
+  const candidate = hashPassword(password, salt).split(":")[1];
+  const expected = Buffer.from(hash, "hex");
+  const actual = Buffer.from(candidate, "hex");
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function parseCookies(req) {
+  return Object.fromEntries(String(req.headers.cookie || "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const index = part.indexOf("=");
+      return index < 0 ? [part, ""] : [part.slice(0, index), decodeURIComponent(part.slice(index + 1))];
+    }));
+}
+
+function publicUser(user) {
+  return { id: user.id, username: user.username };
+}
+
+function makeSession(user) {
+  const token = crypto.randomBytes(32).toString("hex");
+  sessions.set(token, {
+    userId: user.id,
+    expiresAt: Date.now() + SESSION_TTL_MS
+  });
+  return token;
+}
+
+function clearExpiredSessions() {
+  const now = Date.now();
+  for (const [token, session] of sessions) {
+    if (session.expiresAt <= now) sessions.delete(token);
+  }
+}
+
+async function currentUser(req) {
+  clearExpiredSessions();
+  const token = parseCookies(req)[SESSION_COOKIE];
+  const session = token ? sessions.get(token) : null;
+  if (!session) return null;
+  const users = await readUsers();
+  const user = users.find((item) => item.id === session.userId);
+  if (!user) {
+    sessions.delete(token);
+    return null;
+  }
+  session.expiresAt = Date.now() + SESSION_TTL_MS;
+  return user;
+}
+
+async function requireUser(req) {
+  const user = await currentUser(req);
+  if (user) return user;
+  const err = new Error("Login required.");
+  err.status = 401;
+  throw err;
+}
+
+async function migrateLegacyHoldings(user) {
+  await ensureUserStorage(user);
+  const destination = userHoldingsFile(user);
+  const current = JSON.parse(await fs.readFile(destination, "utf8"));
+  if (Array.isArray(current) && current.length) return;
+
+  try {
+    const legacy = JSON.parse(await fs.readFile(HOLDINGS_FILE, "utf8"));
+    if (Array.isArray(legacy) && legacy.length) {
+      await fs.writeFile(destination, `${JSON.stringify(legacy.map(normalizeHoldingRecord), null, 2)}\n`);
+    }
+  } catch {
+    // No legacy file to migrate.
+  }
 }
 
 function cleanCategory(input) {
@@ -447,22 +577,81 @@ async function marketOverview(symbol, options = {}) {
   return payload;
 }
 
-async function handleApi(req, res, url) {
+async function handleAuthApi(req, res, url) {
+  if (url.pathname === "/api/auth/status" && req.method === "GET") {
+    const users = await readUsers();
+    const user = await currentUser(req);
+    return sendJson(res, 200, {
+      authenticated: Boolean(user),
+      hasUsers: users.length > 0,
+      user: user ? publicUser(user) : null
+    });
+  }
+
+  if (url.pathname === "/api/auth/register" && req.method === "POST") {
+    const users = await readUsers();
+    if (users.length) return sendJson(res, 403, { error: "Account setup is already complete." });
+    const body = await readBody(req);
+    const username = cleanUsername(body.username);
+    const password = String(body.password || "");
+    if (username.length < 3) return sendJson(res, 400, { error: "Username must be at least 3 characters." });
+    if (password.length < 8) return sendJson(res, 400, { error: "Password must be at least 8 characters." });
+
+    const user = {
+      id: makeId(username) || crypto.randomBytes(8).toString("hex"),
+      username,
+      passwordHash: hashPassword(password),
+      createdAt: new Date().toISOString()
+    };
+    users.push(user);
+    await writeUsers(users);
+    await migrateLegacyHoldings(user);
+
+    const token = makeSession(user);
+    res.setHeader("set-cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+    return sendJson(res, 200, { authenticated: true, hasUsers: true, user: publicUser(user) });
+  }
+
+  if (url.pathname === "/api/auth/login" && req.method === "POST") {
+    const body = await readBody(req);
+    const username = cleanUsername(body.username);
+    const users = await readUsers();
+    const user = users.find((item) => item.username === username);
+    if (!user || !verifyPassword(body.password, user.passwordHash)) {
+      return sendJson(res, 401, { error: "Incorrect username or password." });
+    }
+
+    const token = makeSession(user);
+    res.setHeader("set-cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+    return sendJson(res, 200, { authenticated: true, hasUsers: true, user: publicUser(user) });
+  }
+
+  if (url.pathname === "/api/auth/logout" && req.method === "POST") {
+    const token = parseCookies(req)[SESSION_COOKIE];
+    if (token) sessions.delete(token);
+    res.setHeader("set-cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+    return sendJson(res, 200, { authenticated: false });
+  }
+
+  return sendJson(res, 404, { error: "Auth route not found." });
+}
+
+async function handleApi(req, res, url, user) {
   if (url.pathname === "/api/health") {
     return sendJson(res, 200, { ok: true, timestamp: new Date().toISOString() });
   }
 
   if (url.pathname === "/api/holdings" && req.method === "GET") {
-    return sendJson(res, 200, (await readHoldings()).map(normalizeHoldingRecord));
+    return sendJson(res, 200, (await readHoldings(user)).map(normalizeHoldingRecord));
   }
 
   if (url.pathname === "/api/holdings" && req.method === "POST") {
     const input = normalizeHolding(await readBody(req));
-    const holdings = (await readHoldings()).map(normalizeHoldingRecord);
+    const holdings = (await readHoldings(user)).map(normalizeHoldingRecord);
     const existing = holdings.findIndex((holding) => holding.id === input.id || (input.symbol && holding.category === input.category && holding.symbol === input.symbol));
     if (existing >= 0) holdings[existing] = { ...holdings[existing], ...input };
     else holdings.push({ ...input, createdAt: new Date().toISOString() });
-    await writeHoldings(holdings.sort((a, b) => a.category.localeCompare(b.category) || (a.symbol || a.name).localeCompare(b.symbol || b.name)));
+    await writeHoldings(user, holdings.sort((a, b) => a.category.localeCompare(b.category) || (a.symbol || a.name).localeCompare(b.symbol || b.name)));
     return sendJson(res, 200, holdings);
   }
 
@@ -470,19 +659,19 @@ async function handleApi(req, res, url) {
   if (holdingMatch && req.method === "PUT") {
     const target = decodeURIComponent(holdingMatch[1]);
     const input = normalizeHolding({ ...(await readBody(req)), id: target });
-    const holdings = (await readHoldings()).map(normalizeHoldingRecord);
+    const holdings = (await readHoldings(user)).map(normalizeHoldingRecord);
     const index = holdings.findIndex((holding) => holding.id === target || holding.symbol === cleanSymbol(target));
     if (index < 0) return sendJson(res, 404, { error: `No holding found for ${target}.` });
     holdings[index] = { ...holdings[index], ...input };
-    await writeHoldings(holdings);
+    await writeHoldings(user, holdings);
     return sendJson(res, 200, holdings);
   }
 
   if (holdingMatch && req.method === "DELETE") {
     const target = decodeURIComponent(holdingMatch[1]);
     const cleanTarget = cleanSymbol(target);
-    const holdings = (await readHoldings()).map(normalizeHoldingRecord).filter((holding) => holding.id !== target && holding.symbol !== cleanTarget);
-    await writeHoldings(holdings);
+    const holdings = (await readHoldings(user)).map(normalizeHoldingRecord).filter((holding) => holding.id !== target && holding.symbol !== cleanTarget);
+    await writeHoldings(user, holdings);
     return sendJson(res, 200, holdings);
   }
 
@@ -524,7 +713,9 @@ async function serveStatic(req, res, url) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
+    if (url.pathname === "/api/health") return sendJson(res, 200, { ok: true, timestamp: new Date().toISOString() });
+    if (url.pathname.startsWith("/api/auth/")) return await handleAuthApi(req, res, url);
+    if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url, await requireUser(req));
     return await serveStatic(req, res, url);
   } catch (error) {
     sendJson(res, error.status || 500, { error: error.message || "Unexpected server error." });

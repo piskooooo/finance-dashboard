@@ -2,7 +2,7 @@
   "name": "finance-dashboard",
   "version": "0.1.0",
   "private": true,
-  "description": "Self-hosted personal finance dashboard for manually tracked stock holdings.",
+  "description": "Self-hosted personal finance dashboard for manually tracked assets, debts, income, and expenses.",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"

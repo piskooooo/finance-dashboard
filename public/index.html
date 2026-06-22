@@ -4,9 +4,29 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Finance Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260621-2" />
+    <link rel="stylesheet" href="/styles.css?v=20260622-1" />
   </head>
-  <body>
+  <body class="auth-pending">
+    <section id="authView" class="auth-view">
+      <form id="authForm" class="auth-card">
+        <div>
+          <p class="eyebrow" id="authEyebrow">Account setup</p>
+          <h1 id="authTitle">Create your finance dashboard login</h1>
+          <p id="authHint" class="summary-copy">This stays local to your NAS. Your existing saved entries will move into the first account automatically.</p>
+        </div>
+        <label>
+          Username
+          <input name="username" autocomplete="username" minlength="3" required placeholder="pisko" />
+        </label>
+        <label>
+          Password
+          <input name="password" type="password" autocomplete="current-password" minlength="8" required placeholder="At least 8 characters" />
+        </label>
+        <p id="authMessage" class="auth-message" role="alert"></p>
+        <button id="authSubmit" type="submit">Create account</button>
+      </form>
+    </section>
+
     <main class="app-shell">
       <aside class="app-sidebar">
         <div class="brand-block">
@@ -23,6 +43,7 @@
             <h2 id="sectionTitle">Dashboard</h2>
           </div>
           <div class="topbar-actions">
+            <span id="sessionUser" class="session-user hidden"></span>
             <div class="attention-compact topbar-attention">
               <button id="attentionToggle" class="attention-toggle" type="button">
                 <span>Needs attention</span>
@@ -31,6 +52,7 @@
               <div id="attentionList" class="news-list compact-news hidden"></div>
             </div>
             <button id="refreshButton" class="secondary">Refresh market data</button>
+            <button id="logoutButton" class="secondary compact" type="button">Log out</button>
           </div>
         </section>
 
@@ -429,6 +451,6 @@
       </div>
     </template>
 
-    <script src="/app.js?v=20260621-2"></script>
+    <script src="/app.js?v=20260622-1"></script>
   </body>
 </html>

@@ -34,7 +34,9 @@ const state = {
   chartRange: "24h",
   calendarOffset: 0,
   summaryOpen: null,
-  attentionOpen: false
+  attentionOpen: false,
+  authMode: "login",
+  user: null
 };
 
 const marketEvents = [
@@ -55,6 +57,15 @@ const marketEvents = [
 ];
 
 const elements = {
+  authView: document.querySelector("#authView"),
+  authForm: document.querySelector("#authForm"),
+  authEyebrow: document.querySelector("#authEyebrow"),
+  authTitle: document.querySelector("#authTitle"),
+  authHint: document.querySelector("#authHint"),
+  authMessage: document.querySelector("#authMessage"),
+  authSubmit: document.querySelector("#authSubmit"),
+  sessionUser: document.querySelector("#sessionUser"),
+  logoutButton: document.querySelector("#logoutButton"),
   tabs: document.querySelector("#assetTabs"),
   sectionEyebrow: document.querySelector("#sectionEyebrow"),
   sectionTitle: document.querySelector("#sectionTitle"),
@@ -175,8 +186,44 @@ async function api(path, options = {}) {
     ...options
   });
   const payload = await response.json();
+  if (response.status === 401 && !path.startsWith("/api/auth/")) {
+    showAuth({ hasUsers: true, message: "Please log in again." });
+  }
   if (!response.ok) throw new Error(payload.error || "Request failed.");
   return payload;
+}
+
+function showAuth({ hasUsers = true, message = "" } = {}) {
+  state.authMode = hasUsers ? "login" : "register";
+  document.body.classList.remove("auth-pending", "authenticated");
+  document.body.classList.add("auth-required");
+  elements.authEyebrow.textContent = hasUsers ? "Welcome back" : "Account setup";
+  elements.authTitle.textContent = hasUsers ? "Log in to your finance dashboard" : "Create your finance dashboard login";
+  elements.authHint.textContent = hasUsers
+    ? "Your data is stored locally on this server under your account."
+    : "This stays local to your NAS. Your existing saved entries will move into the first account automatically.";
+  elements.authSubmit.textContent = hasUsers ? "Log in" : "Create account";
+  elements.authForm.elements.password.autocomplete = hasUsers ? "current-password" : "new-password";
+  elements.authMessage.textContent = message;
+}
+
+function showApp(user) {
+  state.user = user;
+  document.body.classList.remove("auth-pending", "auth-required");
+  document.body.classList.add("authenticated");
+  elements.sessionUser.textContent = user?.username ? `Logged in as ${user.username}` : "";
+  elements.sessionUser.classList.toggle("hidden", !user?.username);
+  elements.authMessage.textContent = "";
+}
+
+async function checkAuth() {
+  const status = await api("/api/auth/status");
+  if (!status.authenticated) {
+    showAuth({ hasUsers: status.hasUsers });
+    return false;
+  }
+  showApp(status.user);
+  return true;
 }
 
 function normalizeHolding(holding) {
@@ -1375,10 +1422,49 @@ elements.attentionToggle.addEventListener("click", () => {
   renderAttention();
 });
 
-renderTabs();
-renderRangeControls();
-renderQuantityMode();
-loadHoldings().catch((error) => {
+elements.authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  elements.authMessage.textContent = "";
+  elements.authSubmit.disabled = true;
+  const formData = new FormData(elements.authForm);
+  const payload = Object.fromEntries(formData.entries());
+  const path = state.authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+  try {
+    const result = await api(path, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    showApp(result.user);
+    elements.authForm.reset();
+    await loadHoldings();
+  } catch (error) {
+    elements.authMessage.textContent = error.message;
+  } finally {
+    elements.authSubmit.disabled = false;
+  }
+});
+
+elements.logoutButton.addEventListener("click", async () => {
+  await api("/api/auth/logout", { method: "POST", body: "{}" });
+  state.user = null;
+  state.holdings = [];
+  state.selectedId = null;
+  state.markets.clear();
+  elements.authForm.reset();
+  showAuth({ hasUsers: true, message: "Logged out." });
+});
+
+async function initialize() {
+  renderTabs();
+  renderRangeControls();
+  renderQuantityMode();
+  const authenticated = await checkAuth();
+  if (!authenticated) return;
+  await loadHoldings();
+}
+
+initialize().catch((error) => {
+  document.body.classList.remove("auth-pending");
   elements.dashboardView.classList.remove("hidden");
   elements.assetView.classList.add("hidden");
   elements.totalNetWorth.textContent = "--";
