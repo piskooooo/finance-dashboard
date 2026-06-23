@@ -92,6 +92,28 @@ body.authenticated .auth-view {
   font-weight: 700;
 }
 
+.auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.7rem;
+  justify-content: center;
+}
+
+button.link-button {
+  border: 0;
+  background: transparent;
+  color: var(--brand-strong);
+  padding: 0.2rem;
+  box-shadow: none;
+  font-size: 0.86rem;
+}
+
+button.link-button:hover {
+  background: transparent;
+  color: var(--ink);
+  text-decoration: underline;
+}
+
 button,
 input,
 select,

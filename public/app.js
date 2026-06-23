@@ -64,6 +64,9 @@ const elements = {
   authHint: document.querySelector("#authHint"),
   authMessage: document.querySelector("#authMessage"),
   authSubmit: document.querySelector("#authSubmit"),
+  loginModeButton: document.querySelector("#loginModeButton"),
+  registerModeButton: document.querySelector("#registerModeButton"),
+  resetModeButton: document.querySelector("#resetModeButton"),
   sessionUser: document.querySelector("#sessionUser"),
   logoutButton: document.querySelector("#logoutButton"),
   budgetImportInput: document.querySelector("#budgetImportInput"),
@@ -195,18 +198,30 @@ async function api(path, options = {}) {
   return payload;
 }
 
-function showAuth({ hasUsers = true, message = "" } = {}) {
-  state.authMode = hasUsers ? "login" : "register";
+function setAuthMode(mode, message = "") {
+  state.authMode = mode;
+  const isLogin = mode === "login";
+  const isRegister = mode === "register";
+  const isReset = mode === "reset";
+  elements.authEyebrow.textContent = isLogin ? "Welcome back" : isReset ? "Local password reset" : "Account setup";
+  elements.authTitle.textContent = isLogin ? "Log in to your finance dashboard" : isReset ? "Reset your local password" : "Create your finance dashboard login";
+  elements.authHint.textContent = isLogin
+    ? "Your data is stored locally on this server under your account."
+    : isReset
+      ? "Enter your local username or email and choose a new password. This resets immediately on this server."
+      : "Create another local account. Each account keeps its own private finance data file.";
+  elements.authSubmit.textContent = isLogin ? "Log in" : isReset ? "Reset password" : "Create account";
+  elements.authForm.elements.password.autocomplete = isLogin ? "current-password" : "new-password";
+  elements.loginModeButton.classList.toggle("hidden", isLogin);
+  elements.registerModeButton.classList.toggle("hidden", isRegister);
+  elements.resetModeButton.classList.toggle("hidden", isReset);
+  elements.authMessage.textContent = message;
+}
+
+function showAuth({ hasUsers = true, message = "", mode = null } = {}) {
   document.body.classList.remove("auth-pending", "authenticated");
   document.body.classList.add("auth-required");
-  elements.authEyebrow.textContent = hasUsers ? "Welcome back" : "Account setup";
-  elements.authTitle.textContent = hasUsers ? "Log in to your finance dashboard" : "Create your finance dashboard login";
-  elements.authHint.textContent = hasUsers
-    ? "Your data is stored locally on this server under your account."
-    : "This stays local to your NAS. Your existing saved entries will move into the first account automatically.";
-  elements.authSubmit.textContent = hasUsers ? "Log in" : "Create account";
-  elements.authForm.elements.password.autocomplete = hasUsers ? "current-password" : "new-password";
-  elements.authMessage.textContent = message;
+  setAuthMode(mode || (hasUsers ? "login" : "register"), message);
 }
 
 function showApp(user) {
@@ -1430,7 +1445,7 @@ elements.authForm.addEventListener("submit", async (event) => {
   elements.authSubmit.disabled = true;
   const formData = new FormData(elements.authForm);
   const payload = Object.fromEntries(formData.entries());
-  const path = state.authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+  const path = state.authMode === "register" ? "/api/auth/register" : state.authMode === "reset" ? "/api/auth/reset-password" : "/api/auth/login";
   try {
     const result = await api(path, {
       method: "POST",
@@ -1445,6 +1460,10 @@ elements.authForm.addEventListener("submit", async (event) => {
     elements.authSubmit.disabled = false;
   }
 });
+
+elements.loginModeButton.addEventListener("click", () => setAuthMode("login"));
+elements.registerModeButton.addEventListener("click", () => setAuthMode("register"));
+elements.resetModeButton.addEventListener("click", () => setAuthMode("reset"));
 
 elements.logoutButton.addEventListener("click", async () => {
   await api("/api/auth/logout", { method: "POST", body: "{}" });

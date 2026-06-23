@@ -176,6 +176,12 @@ function publicUser(user) {
   return { id: user.id, username: user.username };
 }
 
+function findUserByUsername(users, input) {
+  const username = cleanUsername(input);
+  const legacyUsername = legacyCleanUsername(input);
+  return users.find((item) => item.username === username || item.username === legacyUsername);
+}
+
 function makeSession(user) {
   const token = crypto.randomBytes(32).toString("hex");
   sessions.set(token, {
@@ -807,12 +813,12 @@ async function handleAuthApi(req, res, url) {
 
   if (url.pathname === "/api/auth/register" && req.method === "POST") {
     const users = await readUsers();
-    if (users.length) return sendJson(res, 403, { error: "Account setup is already complete." });
     const body = await readBody(req);
     const username = cleanUsername(body.username);
     const password = String(body.password || "");
     if (username.length < 3) return sendJson(res, 400, { error: "Username must be at least 3 characters." });
     if (password.length < 8) return sendJson(res, 400, { error: "Password must be at least 8 characters." });
+    if (findUserByUsername(users, username)) return sendJson(res, 409, { error: "That account already exists. Try logging in or reset the password." });
 
     const user = {
       id: makeId(username) || crypto.randomBytes(8).toString("hex"),
@@ -820,9 +826,10 @@ async function handleAuthApi(req, res, url) {
       passwordHash: hashPassword(password),
       createdAt: new Date().toISOString()
     };
+    const isFirstUser = users.length === 0;
     users.push(user);
     await writeUsers(users);
-    await migrateLegacyHoldings(user);
+    if (isFirstUser) await migrateLegacyHoldings(user);
 
     const token = makeSession(user);
     res.setHeader("set-cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
@@ -832,16 +839,36 @@ async function handleAuthApi(req, res, url) {
   if (url.pathname === "/api/auth/login" && req.method === "POST") {
     const body = await readBody(req);
     const username = cleanUsername(body.username);
-    const legacyUsername = legacyCleanUsername(body.username);
     const users = await readUsers();
-    const user = users.find((item) => item.username === username || item.username === legacyUsername);
+    const user = findUserByUsername(users, body.username);
     if (!user || !verifyPassword(body.password, user.passwordHash)) {
       return sendJson(res, 401, { error: "Incorrect username or password." });
     }
-    if (username.includes("@") && user.username === legacyUsername && user.username !== username) {
+    if (username.includes("@") && user.username !== username) {
       user.username = username;
       await writeUsers(users);
     }
+
+    const token = makeSession(user);
+    res.setHeader("set-cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+    return sendJson(res, 200, { authenticated: true, hasUsers: true, user: publicUser(user) });
+  }
+
+  if (url.pathname === "/api/auth/reset-password" && req.method === "POST") {
+    const body = await readBody(req);
+    const username = cleanUsername(body.username);
+    const password = String(body.password || "");
+    if (username.length < 3) return sendJson(res, 400, { error: "Username must be at least 3 characters." });
+    if (password.length < 8) return sendJson(res, 400, { error: "Password must be at least 8 characters." });
+
+    const users = await readUsers();
+    const user = findUserByUsername(users, body.username);
+    if (!user) return sendJson(res, 404, { error: "No local account was found for that username." });
+
+    user.username = username;
+    user.passwordHash = hashPassword(password);
+    user.updatedAt = new Date().toISOString();
+    await writeUsers(users);
 
     const token = makeSession(user);
     res.setHeader("set-cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
