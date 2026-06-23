@@ -114,6 +114,11 @@ button.link-button:hover {
   text-decoration: underline;
 }
 
+button.auth-danger {
+  justify-self: center;
+  margin-top: 0.2rem;
+}
+
 button,
 input,
 select,

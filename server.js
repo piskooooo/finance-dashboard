@@ -72,6 +72,12 @@ async function writeUsers(users) {
   await fs.writeFile(USERS_FILE, `${JSON.stringify(users, null, 2)}\n`);
 }
 
+async function resetAllAccounts() {
+  sessions.clear();
+  await fs.rm(path.join(DATA_DIR, "users"), { recursive: true, force: true });
+  await writeUsers([]);
+}
+
 async function readHoldings(user) {
   await ensureUserStorage(user);
   const raw = await fs.readFile(userHoldingsFile(user), "utf8");
@@ -809,6 +815,16 @@ async function handleAuthApi(req, res, url) {
       hasUsers: users.length > 0,
       user: user ? publicUser(user) : null
     });
+  }
+
+  if (url.pathname === "/api/auth/reset-all-accounts" && req.method === "POST") {
+    const body = await readBody(req);
+    if (body.confirm !== "DELETE ACCOUNTS") {
+      return sendJson(res, 400, { error: "Confirmation phrase did not match." });
+    }
+    await resetAllAccounts();
+    res.setHeader("set-cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+    return sendJson(res, 200, { authenticated: false, hasUsers: false });
   }
 
   if (url.pathname === "/api/auth/register" && req.method === "POST") {

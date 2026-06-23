@@ -67,6 +67,7 @@ const elements = {
   loginModeButton: document.querySelector("#loginModeButton"),
   registerModeButton: document.querySelector("#registerModeButton"),
   resetModeButton: document.querySelector("#resetModeButton"),
+  resetAllAccountsButton: document.querySelector("#resetAllAccountsButton"),
   sessionUser: document.querySelector("#sessionUser"),
   logoutButton: document.querySelector("#logoutButton"),
   budgetImportInput: document.querySelector("#budgetImportInput"),
@@ -1464,6 +1465,24 @@ elements.authForm.addEventListener("submit", async (event) => {
 elements.loginModeButton.addEventListener("click", () => setAuthMode("login"));
 elements.registerModeButton.addEventListener("click", () => setAuthMode("register"));
 elements.resetModeButton.addEventListener("click", () => setAuthMode("reset"));
+elements.resetAllAccountsButton.addEventListener("click", async () => {
+  const confirmed = window.confirm("Delete all local accounts and account data on this server? This cannot be undone.");
+  if (!confirmed) return;
+  try {
+    await api("/api/auth/reset-all-accounts", {
+      method: "POST",
+      body: JSON.stringify({ confirm: "DELETE ACCOUNTS" })
+    });
+    state.user = null;
+    state.holdings = [];
+    state.selectedId = null;
+    state.markets.clear();
+    elements.authForm.reset();
+    showAuth({ hasUsers: false, message: "All local accounts were reset. Register a fresh account now.", mode: "register" });
+  } catch (error) {
+    elements.authMessage.textContent = error.message;
+  }
+});
 
 elements.logoutButton.addEventListener("click", async () => {
   await api("/api/auth/logout", { method: "POST", body: "{}" });
