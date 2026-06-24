@@ -1,6 +1,6 @@
 services:
   finance-dashboard:
-    image: ${IMAGE_NAME:-ghcr.io/piskooooo/finance-dashboard:latest}
+    image: ${IMAGE_NAME:-ghcr.io/your-github-username/finance-dashboard:latest}
     container_name: finance-dashboard
     restart: unless-stopped
     ports:

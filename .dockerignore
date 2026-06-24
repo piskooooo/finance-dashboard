@@ -1,6 +1,17 @@
 data
 node_modules
 .git
+.env
+.env.local
+.env.*
+!.env.example
 work
 outputs
 .DS_Store
+npm-debug.log*
+*.xlsx
+*.xls
+*.csv
+*.sqlite
+*.sqlite3
+*.db

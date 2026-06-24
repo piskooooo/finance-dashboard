@@ -36,7 +36,7 @@ The app will be available at `http://localhost:3000`.
 After this repo is pushed to GitHub, the included GitHub Actions workflow publishes an image to:
 
 ```text
-ghcr.io/piskooooo/finance-dashboard:latest
+ghcr.io/<github-user>/finance-dashboard:latest
 ```
 
 On your NAS, copy `.env.example` to `.env`, set `IMAGE_NAME`, and run:
@@ -52,7 +52,7 @@ Example `.env` for Unraid:
 ```env
 APP_PORT=3000
 DATA_PATH=/mnt/user/appdata/finance-dashboard/data
-IMAGE_NAME=ghcr.io/piskooooo/finance-dashboard:latest
+IMAGE_NAME=ghcr.io/<github-user>/finance-dashboard:latest
 CACHE_TTL_MS=900000
 PUID=99
 PGID=100
@@ -110,7 +110,7 @@ git init
 git add .
 git commit -m "Initial finance dashboard"
 git branch -M main
-git remote add origin git@github.com:piskooooo/finance-dashboard.git
+git remote add origin git@github.com:<github-user>/finance-dashboard.git
 git push -u origin main
 ```
 
