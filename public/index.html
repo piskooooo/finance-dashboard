@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Finance Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260624-1" />
+    <link rel="stylesheet" href="/styles.css?v=20260626-1" />
   </head>
   <body class="auth-pending">
     <section id="authView" class="auth-view">
@@ -40,6 +40,11 @@
           <h1>Finance Dashboard</h1>
         </div>
         <nav id="assetTabs" class="tabs" aria-label="Finance sections"></nav>
+        <div class="sidebar-footer">
+          <p>Fat Cat Finance LLC</p>
+          <span id="sessionUser" class="session-user hidden"></span>
+          <button id="logoutButton" class="secondary compact" type="button">Log out</button>
+        </div>
       </aside>
 
       <section class="shell">
@@ -49,12 +54,6 @@
             <h2 id="sectionTitle">Dashboard</h2>
           </div>
           <div class="topbar-actions">
-            <span id="sessionUser" class="session-user hidden"></span>
-            <label class="file-button secondary compact" for="budgetImportInput">
-              Import Budget.xlsx
-              <input id="budgetImportInput" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-            </label>
-            <span id="importStatus" class="import-status"></span>
             <div class="attention-compact topbar-attention">
               <button id="attentionToggle" class="attention-toggle" type="button">
                 <span>Needs attention</span>
@@ -62,8 +61,8 @@
               </button>
               <div id="attentionList" class="news-list compact-news hidden"></div>
             </div>
+            <button id="themeModeButton" class="secondary compact" type="button">Light mode</button>
             <button id="refreshButton" class="secondary">Refresh market data</button>
-            <button id="logoutButton" class="secondary compact" type="button">Log out</button>
           </div>
         </section>
 
@@ -230,13 +229,24 @@
                 <div class="field-grid">
                   <label>
                     Credit limit
-                    <input name="creditLimit" type="number" step="0.01" min="0" placeholder="15000.00" />
+                    <input name="creditLimit" type="number" step="0.01" min="0" placeholder="$15,000.00" />
                   </label>
                   <label>
                     Last minimum payment
-                    <input name="minimumPayment" type="number" step="0.01" min="0" placeholder="125.00" />
+                    <input name="minimumPayment" type="number" step="0.01" min="0" placeholder="$0.00" />
                   </label>
                 </div>
+                <label>
+                  Annual fee
+                  <input name="annualFee" type="number" step="0.01" min="0" placeholder="$95.00" />
+                </label>
+              </div>
+
+              <div id="debtFields" class="category-fields hidden">
+                <label>
+                  Next due date
+                  <input name="nextDueDate" type="date" />
+                </label>
               </div>
 
               <div id="loanFields" class="category-fields hidden">
@@ -259,17 +269,13 @@
                 <div class="field-grid">
                   <label>
                     Payment amount
-                    <input name="paymentAmount" type="number" step="0.01" min="0" placeholder="425.00" />
+                    <input name="paymentAmount" type="number" step="0.01" min="0" placeholder="$425.00" />
                   </label>
                   <label>
                     Payments left
                     <input name="paymentsLeft" type="number" step="1" min="0" placeholder="36" />
                   </label>
                 </div>
-                <label>
-                  Next due date
-                  <input name="nextDueDate" type="date" />
-                </label>
               </div>
 
               <div id="altFields" class="category-fields hidden">
@@ -293,11 +299,11 @@
                 <div class="field-grid">
                   <label>
                     Estimated property value
-                    <input name="propertyValue" type="number" step="0.01" min="0" placeholder="450000.00" />
+                    <input name="propertyValue" type="number" step="0.01" min="0" placeholder="$450,000.00" />
                   </label>
                   <label>
                     Mortgage / loan balance
-                    <input name="mortgageBalance" type="number" step="0.01" min="0" placeholder="320000.00" />
+                    <input name="mortgageBalance" type="number" step="0.01" min="0" placeholder="$320,000.00" />
                   </label>
                 </div>
               </div>
@@ -316,16 +322,25 @@
 
               <div id="expenseFields" class="category-fields hidden">
                 <label>
+                  Frequency
+                  <select name="expenseFrequency">
+                    <option value="monthly">Monthly</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Biweekly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option>
+                  </select>
+                </label>
+                <label>
                   Expense type
                   <select name="expenseType">
+                    <option value="personal">Personal</option>
                     <option value="subscription">Subscription</option>
                     <option value="utility">Utility</option>
                     <option value="insurance">Insurance</option>
                     <option value="housing">Housing</option>
                     <option value="transportation">Transportation</option>
                     <option value="business">Business</option>
-                    <option value="debt-payment">Debt payment</option>
-                    <option value="loan-payment">Loan payment</option>
                     <option value="tax">Tax</option>
                     <option value="other">Other</option>
                   </select>
@@ -350,11 +365,11 @@
                 </label>
                 <label id="amountField" class="hidden">
                   <span id="amountLabel">Dollar amount</span>
-                  <input name="amount" type="number" step="0.01" min="0" placeholder="250.00" />
+                  <input name="amount" type="number" step="0.01" min="0" placeholder="$250.00" />
                 </label>
                 <label id="costTotalField">
                   <span id="costTotalLabel">Total cost basis</span>
-                  <input name="totalCost" type="number" step="0.01" min="0" placeholder="1850.00" />
+                  <input name="totalCost" type="number" step="0.01" min="0" placeholder="$1,850.00" />
                 </label>
               </div>
 
@@ -370,7 +385,7 @@
               </div>
               <label id="costPerUnitField">
                 <span id="costPerUnitLabel">Cost per share/unit</span>
-                <input name="costPerUnit" type="number" step="0.00000001" min="0" placeholder="185.00" />
+                <input name="costPerUnit" type="number" step="0.00000001" min="0" placeholder="$185.00" />
               </label>
 
               <label>
