@@ -469,14 +469,23 @@ body[data-color-mode="light"] .app-sidebar {
   text-align: left;
 }
 
-.tab-button::before {
-  width: 0.72rem;
-  height: 0.72rem;
+.tab-icon {
+  width: 1.08rem;
+  height: 1.08rem;
   flex: 0 0 auto;
-  border: 1px solid currentColor;
-  border-radius: 3px;
-  opacity: 0.78;
-  content: "";
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+  transition: color 160ms ease, opacity 160ms ease, transform 160ms ease;
+}
+
+.tab-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tab-button:hover,
@@ -492,6 +501,13 @@ body[data-color-mode="light"] .app-sidebar {
   border-color: rgba(var(--brand-rgb), 0.3);
   background: linear-gradient(90deg, rgba(var(--brand-rgb), 0.22), rgba(255, 255, 255, 0.045));
   color: var(--ink);
+}
+
+.tab-button:hover .tab-icon,
+.tab-button.active .tab-icon {
+  color: var(--brand-strong);
+  opacity: 1;
+  transform: translateY(-1px);
 }
 
 .tab-button.active::after {

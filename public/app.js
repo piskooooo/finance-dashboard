@@ -12,6 +12,20 @@ const categories = [
   { id: "expenses", label: "Expenses", singular: "expense", tracked: false, cashflow: true, units: "Expenses" }
 ];
 
+const navIcons = {
+  dashboard: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"></rect><rect x="14" y="4" width="6" height="6" rx="1.5"></rect><rect x="4" y="14" width="6" height="6" rx="1.5"></rect><rect x="14" y="14" width="6" height="6" rx="1.5"></rect></svg>`,
+  stocks: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M4 18h16"></path><path d="M6 15l4-4 3 3 5-7"></path><path d="M15 7h3v3"></path></svg>`,
+  crypto: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M10 7v10"></path><path d="M10 8h3.2a2.1 2.1 0 0 1 0 4.2H10"></path><path d="M10 12h4a2.3 2.3 0 0 1 0 4.6H10"></path></svg>`,
+  commodities: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3l7 8-7 10-7-10 7-8Z"></path><path d="M5 11h14"></path><path d="M9 11l3 10 3-10"></path></svg>`,
+  alts: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3l8 5v8l-8 5-8-5V8l8-5Z"></path><path d="M8 10l4 3 4-3"></path><path d="M12 13v5"></path></svg>`,
+  properties: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"></path><path d="M6.5 10v9h11v-9"></path><path d="M10 19v-5h4v5"></path></svg>`,
+  credit: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="12" rx="2"></rect><path d="M3.5 10h17"></path><path d="M7 15h3"></path></svg>`,
+  loans: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M4 10h16"></path><path d="M6 10v8"></path><path d="M10 10v8"></path><path d="M14 10v8"></path><path d="M18 10v8"></path><path d="M4 18h16"></path><path d="M12 4l8 4H4l8-4Z"></path></svg>`,
+  cash: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><rect x="3.5" y="7" width="17" height="10" rx="2"></rect><circle cx="12" cy="12" r="2.4"></circle><path d="M6.5 10v4"></path><path d="M17.5 10v4"></path></svg>`,
+  income: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 19V5"></path><path d="M7 10l5-5 5 5"></path><path d="M5 19h14"></path></svg>`,
+  expenses: `<svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 5v14"></path><path d="M7 14l5 5 5-5"></path><path d="M5 5h14"></path></svg>`
+};
+
 const chartRanges = [
   { id: "24h", label: "24H" },
   { id: "5d", label: "5D" },
@@ -643,13 +657,17 @@ function clearSymbolResults() {
   elements.symbolResults.hidden = true;
 }
 
+function navIcon(id) {
+  return navIcons[id] || navIcons.dashboard;
+}
+
 function renderTabs() {
   elements.tabs.innerHTML = "";
   for (const category of categories) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `tab-button${state.activeTab === category.id ? " active" : ""}`;
-    button.textContent = category.label;
+    button.innerHTML = `${navIcon(category.id)}<span>${category.label}</span>`;
     button.addEventListener("click", () => setTab(category.id));
     elements.tabs.append(button);
   }
