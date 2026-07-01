@@ -2,6 +2,12 @@
 
 This repo is the self-hosted Finance Dashboard, not the real estate CRM, though the user often wants CRM-style ergonomics: dashboard first, sidebar navigation, dense useful panels, and Docker/NAS deployment.
 
+## Canonical Project Root
+
+- Work from `/Users/pisko/Documents/finance-dashboard`.
+- If a Codex thread opens inside an older `/Users/pisko/Documents/Codex/...` wrapper folder, switch to this repo before reading or editing files.
+- At the start of new project threads, confirm `pwd` is this folder and run `git status --short --branch`.
+
 ## Product Goal
 
 Build a private, self-hosted personal finance dashboard for manually entered assets, debts, income, and expenses. It should run cleanly on Unraid via Docker, persist user data in mounted appdata, and avoid linking to brokerage or bank accounts unless the user explicitly asks later.

@@ -4,12 +4,12 @@ A small self-hosted dashboard for manually entered finances. It stores account d
 
 ## What works now
 
-- Add, update, select, and remove stock holdings manually.
 - Create a local login on first run and keep each user's finance data in private server-side JSON files.
-- View a selected stock's last quote, daily move, weekly move, 30-day price line, and estimated position value.
-- See recent news articles for the selected ticker.
-- Read an auto-generated daily/weekly summary based on recent performance and the top returned article.
-- Run locally with Node or on a NAS using Docker Compose.
+- Track stocks, crypto, commodities, alt investments, properties, credit cards, loans, cash, income, and expenses.
+- Use Yahoo Finance autocomplete and market data for ticker-tracked assets.
+- View quotes, performance summaries, compact news, net worth, allocation, debt/payment, cash-flow, and calendar panels.
+- Add, update, and remove manual entries without linking brokerage or bank accounts.
+- Run locally with Node or on a NAS using Docker Compose or the GHCR image.
 
 ## Local development
 
@@ -32,10 +32,10 @@ The app will be available at `http://localhost:3000`.
 
 ## Docker Compose from GitHub Container Registry
 
-After this repo is pushed to GitHub, the included GitHub Actions workflow publishes an image to:
+The included GitHub Actions workflow publishes an image to:
 
 ```text
-ghcr.io/<github-user>/finance-dashboard:latest
+ghcr.io/piskooooo/finance-dashboard:latest
 ```
 
 On your NAS, copy `.env.example` to `.env`, set `IMAGE_NAME`, and run:
@@ -51,7 +51,7 @@ Example `.env` for Unraid:
 ```env
 APP_PORT=3000
 DATA_PATH=/mnt/user/appdata/finance-dashboard/data
-IMAGE_NAME=ghcr.io/<github-user>/finance-dashboard:latest
+IMAGE_NAME=ghcr.io/piskooooo/finance-dashboard:latest
 CACHE_TTL_MS=900000
 PUID=99
 PGID=100
@@ -89,18 +89,13 @@ Older single-user installs used `holdings.json` at the root of the data folder. 
 
 ## GitHub setup
 
-From this folder:
+This checkout already tracks:
 
-```bash
-git init
-git add .
-git commit -m "Initial finance dashboard"
-git branch -M main
-git remote add origin git@github.com:<github-user>/finance-dashboard.git
-git push -u origin main
+```text
+https://github.com/piskooooo/finance-dashboard.git
 ```
 
-Then in GitHub, check the repository's Actions tab. The `Publish Docker image` workflow should build and publish `linux/amd64` and `linux/arm64` images to GitHub Container Registry.
+After pushing to `main`, check the repository's Actions tab. The `Publish Docker image` workflow should build and publish `linux/amd64` and `linux/arm64` images to GitHub Container Registry.
 
 If the package is private, your NAS will need to authenticate to GHCR before pulling:
 
