@@ -62,17 +62,41 @@ const state = {
   summaryOpen: null,
   attentionOpen: false,
   authMode: "login",
+  recoveryEnabled: false,
   user: null,
   colorMode: window.localStorage.getItem("financeColorMode") || "dark"
 };
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 const marketEvents = [
+  { date: "2026-01-01", title: "Market closed: New Year's Day", type: "Market holiday" },
+  { date: "2026-01-19", title: "Market closed: Martin Luther King Jr. Day", type: "Market holiday" },
+  { date: "2026-01-27", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2026-01-28", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2026-02-16", title: "Market closed: Washington's Birthday", type: "Market holiday" },
+  { date: "2026-03-17", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2026-03-18", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2026-04-03", title: "Market closed: Good Friday", type: "Market holiday" },
+  { date: "2026-04-28", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2026-04-29", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2026-05-25", title: "Market closed: Memorial Day", type: "Market holiday" },
+  { date: "2026-06-16", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2026-06-17", title: "FOMC rate decision", type: "Federal Reserve" },
   { date: "2026-06-19", title: "Market closed: Juneteenth", type: "Market holiday" },
   { date: "2026-07-03", title: "Market closed: Independence Day observed", type: "Market holiday" },
   { date: "2026-07-28", title: "FOMC meeting begins", type: "Federal Reserve" },
   { date: "2026-07-29", title: "FOMC rate decision", type: "Federal Reserve" },
   { date: "2026-09-15", title: "FOMC meeting begins", type: "Federal Reserve" },
   { date: "2026-09-16", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2026-09-07", title: "Market closed: Labor Day", type: "Market holiday" },
   { date: "2026-10-27", title: "FOMC meeting begins", type: "Federal Reserve" },
   { date: "2026-10-28", title: "FOMC rate decision", type: "Federal Reserve" },
   { date: "2026-11-26", title: "Market closed: Thanksgiving", type: "Market holiday" },
@@ -80,7 +104,34 @@ const marketEvents = [
   { date: "2026-12-08", title: "FOMC meeting begins", type: "Federal Reserve" },
   { date: "2026-12-09", title: "FOMC rate decision", type: "Federal Reserve" },
   { date: "2026-12-24", title: "Market early close", type: "Market holiday" },
-  { date: "2026-12-25", title: "Market closed: Christmas", type: "Market holiday" }
+  { date: "2026-12-25", title: "Market closed: Christmas", type: "Market holiday" },
+  { date: "2027-01-01", title: "Market closed: New Year's Day", type: "Market holiday" },
+  { date: "2027-01-18", title: "Market closed: Martin Luther King Jr. Day", type: "Market holiday" },
+  { date: "2027-01-26", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2027-01-27", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2027-02-15", title: "Market closed: Washington's Birthday", type: "Market holiday" },
+  { date: "2027-03-16", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2027-03-17", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2027-03-26", title: "Market closed: Good Friday", type: "Market holiday" },
+  { date: "2027-04-27", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2027-04-28", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2027-05-31", title: "Market closed: Memorial Day", type: "Market holiday" },
+  { date: "2027-06-08", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2027-06-09", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2027-06-18", title: "Market closed: Juneteenth observed", type: "Market holiday" },
+  { date: "2027-07-05", title: "Market closed: Independence Day observed", type: "Market holiday" },
+  { date: "2027-07-27", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2027-07-28", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2027-09-06", title: "Market closed: Labor Day", type: "Market holiday" },
+  { date: "2027-09-14", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2027-09-15", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2027-10-26", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2027-10-27", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2027-11-25", title: "Market closed: Thanksgiving", type: "Market holiday" },
+  { date: "2027-11-26", title: "Market early close", type: "Market holiday" },
+  { date: "2027-12-07", title: "FOMC meeting begins", type: "Federal Reserve" },
+  { date: "2027-12-08", title: "FOMC rate decision", type: "Federal Reserve" },
+  { date: "2027-12-24", title: "Market closed: Christmas observed", type: "Market holiday" }
 ];
 
 const elements = {
@@ -109,6 +160,7 @@ const elements = {
   idInput: document.querySelector('[name="id"]'),
   formTitle: document.querySelector("#formTitle"),
   formHint: document.querySelector("#formHint"),
+  formMessage: document.querySelector("#formMessage"),
   symbolField: document.querySelector("#symbolField"),
   symbolInput: document.querySelector('[name="symbol"]'),
   nameField: document.querySelector("#nameField"),
@@ -238,13 +290,13 @@ function setAuthMode(mode, message = "") {
   elements.authHint.textContent = isLogin
     ? "Your data is stored locally on this server under your account."
     : isReset
-      ? "Enter your local username or email and choose a new password. This resets immediately on this server."
+      ? "Set a new password for a local account. Use this only on a trusted local network."
       : "Create another local account. Each account keeps its own private finance data file.";
   elements.authSubmit.textContent = isLogin ? "Log in" : isReset ? "Reset password" : "Create account";
   elements.authForm.elements.password.autocomplete = isLogin ? "current-password" : "new-password";
   elements.loginModeButton.classList.toggle("hidden", isLogin);
   elements.registerModeButton.classList.toggle("hidden", isRegister);
-  elements.resetModeButton.classList.toggle("hidden", isReset);
+  elements.resetModeButton.classList.toggle("hidden", isReset || !state.recoveryEnabled);
   elements.authMessage.textContent = message;
 }
 
@@ -274,6 +326,7 @@ function applyColorMode(mode = state.colorMode) {
 
 async function checkAuth() {
   const status = await api("/api/auth/status");
+  state.recoveryEnabled = Boolean(status.recoveryEnabled);
   if (!status.authenticated) {
     showAuth({ hasUsers: status.hasUsers });
     return false;
@@ -593,9 +646,16 @@ function calendarEvents() {
 function isMarketClosed(date, events = calendarEvents()) {
   const day = date.getDay();
   if (day === 0 || day === 6) return "Weekend";
-  const iso = date.toISOString().slice(0, 10);
+  const iso = localDateKey(date);
   const event = events.find((item) => item.date === iso && item.title.includes("closed"));
   return event?.title.replace("Market closed: ", "") || "";
+}
+
+function localDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function renderCalendar() {
@@ -612,12 +672,12 @@ function renderCalendar() {
   for (let i = 0; i < first.getDay(); i += 1) cells.push("<span></span>");
   for (let day = 1; day <= last.getDate(); day += 1) {
     const date = new Date(year, month, day);
-    const iso = date.toISOString().slice(0, 10);
+    const iso = localDateKey(date);
     const events = allEvents.filter((event) => event.date === iso);
     const closed = isMarketClosed(date, allEvents);
     const kindClasses = [...new Set(events.map((event) => `event-${eventKind(event)}`))].join(" ");
     const isToday = date.toDateString() === today.toDateString();
-    cells.push(`<button type="button" class="calendar-day${closed ? " closed" : ""}${events.length ? " has-event" : ""}${kindClasses ? ` ${kindClasses}` : ""}${isToday ? " today" : ""}" title="${[closed, ...events.map((event) => event.title)].filter(Boolean).join(", ")}"><strong>${day}</strong><span>${isToday ? "Today" : closed ? "Closed" : events[0] ? eventLabel(events[0]) : ""}</span></button>`);
+    cells.push(`<div class="calendar-day${closed ? " closed" : ""}${events.length ? " has-event" : ""}${kindClasses ? ` ${kindClasses}` : ""}${isToday ? " today" : ""}" title="${escapeHtml([closed, ...events.map((event) => event.title)].filter(Boolean).join(", "))}"><strong>${day}</strong><span>${escapeHtml(isToday ? "Today" : closed ? "Closed" : events[0] ? eventLabel(events[0]) : "")}</span></div>`);
   }
   elements.marketCalendar.innerHTML = `
     <div class="calendar-title">
@@ -635,12 +695,17 @@ function renderCalendar() {
     });
   });
 
-  const monthStart = first.toISOString().slice(0, 10);
-  const monthEnd = last.toISOString().slice(0, 10);
+  const monthStart = localDateKey(first);
+  const monthEnd = localDateKey(last);
   const upcoming = allEvents.filter((event) => event.date >= monthStart && event.date <= monthEnd).slice(0, 8);
   elements.upcomingEvents.innerHTML = upcoming.length
-    ? upcoming.map((event, index) => `<button type="button" class="event-row event-${eventKind(event)}" data-event-index="${index}"><strong>${event.title}</strong><span>${event.type} · ${new Date(`${event.date}T12:00:00`).toLocaleDateString()}</span></button>`).join("")
-    : `<div class="empty-state"><strong>No listed events</strong><span>No saved market holidays or Fed events for ${monthName}.</span></div>`;
+    ? upcoming.map((event, index) => {
+      const content = `<strong>${escapeHtml(event.title)}</strong><span>${escapeHtml(event.type)} · ${new Date(`${event.date}T12:00:00`).toLocaleDateString()}</span>`;
+      return event.holdingId
+        ? `<button type="button" class="event-row event-${eventKind(event)}" data-event-index="${index}">${content}</button>`
+        : `<div class="event-row event-${eventKind(event)}">${content}</div>`;
+    }).join("")
+    : `<div class="empty-state"><strong>No listed events</strong><span>No saved market holidays or Fed events for ${escapeHtml(monthName)}.</span></div>`;
   elements.upcomingEvents.querySelectorAll("[data-event-index]").forEach((button) => {
     button.addEventListener("click", async () => {
       const event = upcoming[Number(button.dataset.eventIndex)];
@@ -826,7 +891,7 @@ function renderSummaryDetails() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "detail-row summary-row";
-    button.innerHTML = `<span>${row.label}</span><strong>${currency(row.value, row.currency)}</strong>`;
+    button.innerHTML = `<span>${escapeHtml(row.label)}</span><strong>${currency(row.value, row.currency)}</strong>`;
     button.addEventListener("click", async () => {
       if (row.id) {
         await setTab(row.category);
@@ -890,7 +955,7 @@ function renderAttention() {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "news-item";
-    row.innerHTML = `<strong>${holding.symbol || holding.name}</strong><span class="news-meta">${categoryMap[holding.category].label} needs a value or quote.</span>`;
+    row.innerHTML = `<strong>${escapeHtml(holding.symbol || holding.name)}</strong><span class="news-meta">${escapeHtml(categoryMap[holding.category].label)} needs a value or quote.</span>`;
     row.addEventListener("click", async () => {
       await setTab(holding.category);
       await selectHolding(holding.id);
@@ -1062,7 +1127,7 @@ function renderHoldings() {
     row.style.setProperty("--holding-color", holdingColor(holding, index));
     const label = holding.symbol || holding.name;
     const value = category.cashflow ? itemValue(holding) : signedValue(holding);
-    const useChip = use ? `<em class="use-chip ${use}">${use}</em>` : "";
+    const useChip = use ? `<em class="use-chip ${use}">${escapeHtml(use)}</em>` : "";
     const valueText = currency(Math.abs(category.id === "expenses" ? monthlyizedExpenseAmount(holding) : value || 0), holding.currency);
     const sub = holding.category === "cash" && holding.institution
       ? `${holding.institution} · ${holding.accountType || "account"} · ${valueText}`
@@ -1071,7 +1136,7 @@ function renderHoldings() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "holding-select";
-    button.innerHTML = `<strong>${label}</strong><span class="holding-meta">${sub}${useChip}</span>`;
+    button.innerHTML = `<strong>${escapeHtml(label)}</strong><span class="holding-meta">${escapeHtml(sub)}${useChip}</span>`;
     button.addEventListener("click", () => selectHolding(holding.id));
 
     const remove = document.createElement("button");
@@ -1228,12 +1293,13 @@ function renderNews(news) {
   }
 
   const addArticle = (article, extra = false) => {
+    if (!/^https?:\/\//i.test(article.link || "")) return;
     const link = document.createElement("a");
     link.className = `news-item${extra ? " extra-news hidden" : ""}`;
     link.href = article.link;
     link.target = "_blank";
     link.rel = "noreferrer";
-    link.innerHTML = `<strong>${article.title}</strong><span class="news-meta">${article.source || "Yahoo Finance"}${article.publishedAt ? ` · ${new Date(article.publishedAt).toLocaleString()}` : ""}</span>`;
+    link.innerHTML = `<strong>${escapeHtml(article.title)}</strong><span class="news-meta">${escapeHtml(article.source || "Yahoo Finance")}${article.publishedAt ? ` · ${new Date(article.publishedAt).toLocaleString()}` : ""}</span>`;
     elements.newsList.append(link);
   };
 
@@ -1273,7 +1339,7 @@ function creditEstimate(holding) {
 }
 
 function detailRow(label, value) {
-  return `<div class="detail-row"><span>${label}</span><strong>${value || "--"}</strong></div>`;
+  return `<div class="detail-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "--")}</strong></div>`;
 }
 
 function renderManualDetails(holding) {
@@ -1466,6 +1532,7 @@ async function refreshActiveTab() {
 
 function resetFormForTab(tab) {
   elements.form.reset();
+  elements.formMessage.textContent = "";
   elements.idInput.value = "";
   elements.saveButton.textContent = "Save item";
   elements.categoryInput.value = tab;
@@ -1534,7 +1601,7 @@ async function lookupSymbols(query) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "symbol-result";
-      button.innerHTML = `<strong>${result.symbol}</strong><span>${result.name} · ${result.exchange || result.type}</span>`;
+      button.innerHTML = `<strong>${escapeHtml(result.symbol)}</strong><span>${escapeHtml(result.name)} · ${escapeHtml(result.exchange || result.type)}</span>`;
       button.addEventListener("click", async () => {
         elements.symbolInput.value = result.symbol;
         elements.nameInput.value = result.name;
@@ -1560,18 +1627,26 @@ async function loadHoldings() {
 
 elements.form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  elements.formMessage.textContent = "";
+  elements.saveButton.disabled = true;
   const formData = new FormData(elements.form);
   const payload = Object.fromEntries(formData.entries());
   payload.symbol = (payload.symbol || "").toUpperCase();
   if (["cash", "credit", "loans", "properties", "income", "expenses"].includes(state.activeTab)) payload.quantityMode = "value";
-  await api("/api/holdings", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
-  resetFormForTab(state.activeTab);
-  await loadHoldings();
-  const created = state.holdings.find((holding) => holding.category === state.activeTab && (holding.symbol === payload.symbol || holding.name === payload.name));
-  if (created) await selectHolding(created.id, true);
+  try {
+    await api("/api/holdings", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    resetFormForTab(state.activeTab);
+    await loadHoldings();
+    const created = state.holdings.find((holding) => holding.category === state.activeTab && (holding.symbol === payload.symbol || holding.name === payload.name));
+    if (created) await selectHolding(created.id, true);
+  } catch (error) {
+    elements.formMessage.textContent = error.message;
+  } finally {
+    elements.saveButton.disabled = false;
+  }
 });
 
 elements.quantityMode.addEventListener("change", renderQuantityMode);

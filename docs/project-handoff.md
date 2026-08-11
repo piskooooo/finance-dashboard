@@ -6,7 +6,7 @@ The goal is a private, self-hosted finance dashboard that the user can run from 
 
 The app currently supports:
 
-- Local register/login/reset flows with server-side JSON persistence.
+- Local register/login flows, authenticated account reset, and optional local-only password recovery with server-side JSON persistence.
 - Dashboard-first layout with sidebar tabs.
 - Stocks, crypto, commodities, alt investments, properties, credit cards, loans, cash, income, and expenses.
 - Yahoo Finance autocomplete and market data for ticker-tracked categories.
@@ -15,6 +15,7 @@ The app currently supports:
 - Cash-flow estimates, debt/payment summaries, net worth, allocation charts, and calendar events.
 - Docker Compose from source and GHCR image deployment.
 - Unraid-friendly volume mapping and `PUID`/`PGID`.
+- Node 22/24 integration checks in GitHub Actions; production Docker image based on Node 24 LTS.
 
 Important privacy status: user-specific data should live only in mounted runtime data. Do not put personal emails, account records, uploaded spreadsheet contents, or generated user data into public GitHub docs or source.
 
@@ -30,6 +31,8 @@ Important privacy status: user-specific data should live only in mounted runtime
 ├── docker-entrypoint.sh         # PUID/PGID runtime user handling
 ├── package.json                 # Node scripts/deps
 ├── server.js                    # Plain Node HTTP server and APIs
+├── test/
+│   └── server.test.js            # Node integration coverage for core HTTP behavior
 ├── public/
 │   ├── index.html               # Static app shell
 │   ├── app.js                   # Vanilla frontend state/rendering/API calls
@@ -37,7 +40,7 @@ Important privacy status: user-specific data should live only in mounted runtime
 ├── data/
 │   └── .gitkeep                 # Runtime mount placeholder only
 └── .github/workflows/
-    └── docker-publish.yml       # GHCR multi-arch image publishing
+    └── docker-publish.yml       # Node checks and GHCR multi-arch publishing
 ```
 
 Runtime files are intentionally not part of source:
@@ -55,6 +58,8 @@ Install dependencies:
 npm install
 ```
 
+Use Node.js 22 or newer locally. The production container runs Node.js 24 LTS.
+
 Run locally on the default internal app port:
 
 ```bash
@@ -65,6 +70,12 @@ Run locally on another port:
 
 ```bash
 PORT=9999 npm run dev
+```
+
+Run the focused integration checks:
+
+```bash
+npm test
 ```
 
 Run source-built Docker:
@@ -108,16 +119,24 @@ Validation commands:
 ```bash
 node --check server.js
 node --check public/app.js
+npm audit --audit-level=moderate
 git diff --check
 ```
 
-There is no formal automated test suite yet. For UI work, run the app and browser-test the specific flow. Check page identity, nonblank render, framework/browser console errors, one real interaction, and responsive behavior when layout is changed.
+The project has a focused Node integration test for auth, holdings CRUD, security headers, request limits, and missing-route behavior:
+
+```bash
+npm test
+```
+
+For UI work, also run the app and browser-test the specific flow. Check page identity, nonblank render, browser console errors, one real interaction, and responsive behavior when layout is changed.
 
 ## Key Architecture Decisions
 
 - Plain Node server, no Express. This keeps the container small and easy to reason about.
+- Node 22+ is supported locally; the production image uses Node 24 LTS because Node 20 is end-of-life.
 - Static vanilla frontend, no build step. This makes Unraid deployment simple and avoids frontend bundler complexity.
-- Server-side JSON persistence, one file per user. This is sufficient for a single-user NAS app and avoids introducing a database before needed.
+- Server-side JSON persistence, one file per user, with atomic file replacement. This is sufficient for light single-instance NAS use and avoids introducing a database before needed.
 - Local auth only. There is no email service, OAuth provider, or cloud account.
 - Passwords are stored with `crypto.scryptSync`; sessions are stored in memory and represented by a cookie.
 - Brokerage/bank linking is intentionally avoided. The user prefers manual entry first.
@@ -125,9 +144,9 @@ There is no formal automated test suite yet. For UI work, run the app and browse
 - Non-market categories are manual unless a future API integration is explicitly added.
 - Quotes/history use Yahoo Finance chart endpoints with Stooq fallback. These are unofficial and should be treated as fragile.
 - News uses Yahoo Finance RSS.
-- Calendar events include hardcoded market/Fed dates and generated entry dates such as debt due dates.
+- Calendar events include maintained 2026-2027 market/Fed dates and generated entry dates such as debt due dates.
 - Theme accent is data-driven: green for up, red for down more than about 1%, blue/neutral in between, over a black/gray/white base.
-- Docker image supports Unraid `PUID`/`PGID`; GHCR workflow publishes `linux/amd64` and `linux/arm64`.
+- Docker image supports Unraid `PUID`/`PGID`; the GHCR workflow runs Node 22/24 checks and publishes `linux/amd64` and `linux/arm64`.
 
 ## Current Open Tasks
 
@@ -135,8 +154,7 @@ No active blocking task is in progress at the time of this handoff.
 
 Useful next tasks:
 
-- Update `README.md` so it reflects the full app, not just the earlier stock-focused version.
-- Add automated tests for server normalization, auth, payoff math, and monthly cash-flow calculations.
+- Expand automated tests for normalization, payoff math, monthly cash-flow calculations, and malformed runtime data.
 - Add a small Playwright smoke test for login, tab switching, add/edit/delete, and dashboard render.
 - Consider replacing JSON writes with SQLite if records grow or multi-user/concurrent writes become important.
 - Add scheduled daily/weekly snapshots if the user wants true historical performance tracking.
@@ -147,15 +165,14 @@ Useful next tasks:
 
 ## Known Bugs Or Fragile Areas
 
-- `README.md` is stale in places and under-describes the current dashboard breadth.
 - Market and news providers are unofficial and can rate-limit, change response shape, or fail.
 - Sessions are in memory. Container restart logs the user out.
-- JSON persistence has no file locking. It is okay for single-user use but fragile for concurrent writes.
-- Password reset and reset-all-accounts are intentionally simple/local and not production-grade.
-- There is no CSRF protection. This is acceptable only for a trusted private LAN deployment.
-- Calendar market holidays/Fed dates are hardcoded and will need updating over time.
+- JSON replacement is atomic, but read-modify-write operations have no cross-process locking. It remains intended for light, single-instance use.
+- Password recovery remains deliberately disabled unless local-only recovery is enabled; there is no email or external identity recovery.
+- Browser mutations use same-origin checks, but the app still belongs on a trusted LAN or behind HTTPS and an external access layer.
+- Calendar market holidays and FOMC dates are maintained as static 2026-2027 data and will need a future refresh.
 - Credit card payoff estimates depend heavily on minimum-payment assumptions.
-- Budget import code remains in `server.js` and `public/app.js` even though the visible import button was removed.
+- Budget import code remains in `server.js` and `public/app.js` even though the visible import button was removed; it is not a supported public workflow.
 - Static asset cache busting is manual via query strings in `public/index.html`.
 - `data/` must stay mounted on Unraid or app updates will appear to wipe saved data.
 
@@ -182,6 +199,6 @@ Useful next tasks:
 - The user has NAS-hosted services available for future use, including Redis, Qdrant, Adminer, Ollama, and GPU acceleration.
 - The budget spreadsheet import was experimental and should not leak personal budget data into the repo.
 - The app was deliberately changed to local accounts because the user wanted data to survive updates without re-entry.
-- The account reset flow was intentionally permissive because this is currently a private single-user app.
+- Account reset now requires authentication after an account exists; unauthenticated password recovery is separately disabled by default.
 - The sidebar icons are inline SVGs, not external images, so they should not create missing asset requests.
 - The brand/footer text requested by the user is `Fat Cat Finance LLC`.

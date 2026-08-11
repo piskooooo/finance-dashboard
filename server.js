@@ -11,9 +11,18 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const HOLDINGS_FILE = path.join(DATA_DIR, "holdings.json");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
-const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 15 * 60 * 1000);
+function positiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const CACHE_TTL_MS = positiveNumber(process.env.CACHE_TTL_MS, 15 * 60 * 1000);
 const SESSION_COOKIE = "finance_session";
-const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS || 1000 * 60 * 60 * 24 * 14);
+const SESSION_TTL_MS = positiveNumber(process.env.SESSION_TTL_MS, 1000 * 60 * 60 * 24 * 14);
+const MAX_JSON_BODY_BYTES = positiveNumber(process.env.MAX_JSON_BODY_BYTES, 1024 * 1024);
+const UPSTREAM_TIMEOUT_MS = positiveNumber(process.env.UPSTREAM_TIMEOUT_MS, 10_000);
+const ALLOW_INSECURE_ACCOUNT_RECOVERY = process.env.ALLOW_INSECURE_ACCOUNT_RECOVERY === "true";
+const FORCE_SECURE_COOKIES = process.env.FORCE_SECURE_COOKIES === "true";
 
 const marketCache = new Map();
 const searchCache = new Map();
@@ -44,6 +53,17 @@ async function ensureStorage() {
   }
 }
 
+async function writeJsonFile(filePath, value) {
+  const temporary = `${filePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  try {
+    await fs.rename(temporary, filePath);
+  } catch (error) {
+    await fs.rm(temporary, { force: true });
+    throw error;
+  }
+}
+
 function userDataDir(user) {
   return path.join(DATA_DIR, "users", user.id);
 }
@@ -69,7 +89,7 @@ async function readUsers() {
 
 async function writeUsers(users) {
   await ensureStorage();
-  await fs.writeFile(USERS_FILE, `${JSON.stringify(users, null, 2)}\n`);
+  await writeJsonFile(USERS_FILE, users);
 }
 
 async function resetAllAccounts() {
@@ -86,11 +106,32 @@ async function readHoldings(user) {
 
 async function writeHoldings(user, holdings) {
   await ensureUserStorage(user);
-  await fs.writeFile(userHoldingsFile(user), `${JSON.stringify(holdings, null, 2)}\n`);
+  await writeJsonFile(userHoldingsFile(user), holdings);
+}
+
+function securityHeaders() {
+  return {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "no-referrer",
+    "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
+    "content-security-policy": [
+      "default-src 'self'",
+      "base-uri 'none'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "connect-src 'self'"
+    ].join("; ")
+  };
 }
 
 function sendJson(res, status, payload) {
   res.writeHead(status, {
+    ...securityHeaders(),
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store"
   });
@@ -98,13 +139,22 @@ function sendJson(res, status, payload) {
 }
 
 function sendText(res, status, text) {
-  res.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
+  res.writeHead(status, { ...securityHeaders(), "content-type": "text/plain; charset=utf-8" });
   res.end(text);
 }
 
-async function readBody(req) {
+async function readBody(req, maxBytes = MAX_JSON_BODY_BYTES) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      const err = new Error("Request body is too large.");
+      err.status = 413;
+      throw err;
+    }
+    chunks.push(chunk);
+  }
   if (!chunks.length) return {};
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -195,6 +245,49 @@ function makeSession(user) {
     expiresAt: Date.now() + SESSION_TTL_MS
   });
   return token;
+}
+
+function isSecureRequest(req) {
+  return FORCE_SECURE_COOKIES || req.headers["x-forwarded-proto"] === "https" || req.socket.encrypted;
+}
+
+function requireSameOrigin(req) {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return;
+  if (req.headers["sec-fetch-site"] === "cross-site") {
+    const err = new Error("Cross-site requests are not allowed.");
+    err.status = 403;
+    throw err;
+  }
+
+  const origin = req.headers.origin;
+  if (!origin) return;
+  const host = req.headers.host;
+  if (!host) {
+    const err = new Error("A valid Host header is required.");
+    err.status = 400;
+    throw err;
+  }
+  const expected = `${isSecureRequest(req) ? "https" : "http"}://${host}`;
+  if (origin !== expected) {
+    const err = new Error("Cross-origin requests are not allowed.");
+    err.status = 403;
+    throw err;
+  }
+}
+
+function sessionCookie(req, token, maxAgeSeconds) {
+  return [
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    "HttpOnly",
+    "SameSite=Lax",
+    "Path=/",
+    `Max-Age=${maxAgeSeconds}`,
+    isSecureRequest(req) ? "Secure" : ""
+  ].filter(Boolean).join("; ");
+}
+
+function clearSessionCookie(req) {
+  return sessionCookie(req, "", 0);
 }
 
 function clearExpiredSessions() {
@@ -545,7 +638,8 @@ async function fetchText(url) {
   const response = await fetch(url, {
     headers: {
       "user-agent": "finance-dashboard/0.1"
-    }
+    },
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
   });
   if (!response.ok) {
     throw new Error(`Fetch failed with ${response.status} for ${url}`);
@@ -679,9 +773,11 @@ async function fetchNews(symbol) {
       const found = item.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`));
       return decodeEntities(found?.[1] || "").trim();
     };
+    const link = field("link");
+    if (!/^https?:\/\//i.test(link)) continue;
     articles.push({
       title: field("title"),
-      link: field("link"),
+      link,
       source: field("source") || "Yahoo Finance",
       publishedAt: field("pubDate")
     });
@@ -815,17 +911,20 @@ async function handleAuthApi(req, res, url) {
     return sendJson(res, 200, {
       authenticated: Boolean(user),
       hasUsers: users.length > 0,
+      recoveryEnabled: ALLOW_INSECURE_ACCOUNT_RECOVERY,
       user: user ? publicUser(user) : null
     });
   }
 
   if (url.pathname === "/api/auth/reset-all-accounts" && req.method === "POST") {
+    const users = await readUsers();
+    if (users.length > 0) await requireUser(req);
     const body = await readBody(req);
     if (body.confirm !== "DELETE ACCOUNTS") {
       return sendJson(res, 400, { error: "Confirmation phrase did not match." });
     }
     await resetAllAccounts();
-    res.setHeader("set-cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+    res.setHeader("set-cookie", clearSessionCookie(req));
     return sendJson(res, 200, { authenticated: false, hasUsers: false });
   }
 
@@ -850,7 +949,7 @@ async function handleAuthApi(req, res, url) {
     if (isFirstUser) await migrateLegacyHoldings(user);
 
     const token = makeSession(user);
-    res.setHeader("set-cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+    res.setHeader("set-cookie", sessionCookie(req, token, Math.floor(SESSION_TTL_MS / 1000)));
     return sendJson(res, 200, { authenticated: true, hasUsers: true, user: publicUser(user) });
   }
 
@@ -868,11 +967,14 @@ async function handleAuthApi(req, res, url) {
     }
 
     const token = makeSession(user);
-    res.setHeader("set-cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+    res.setHeader("set-cookie", sessionCookie(req, token, Math.floor(SESSION_TTL_MS / 1000)));
     return sendJson(res, 200, { authenticated: true, hasUsers: true, user: publicUser(user) });
   }
 
   if (url.pathname === "/api/auth/reset-password" && req.method === "POST") {
+    if (!ALLOW_INSECURE_ACCOUNT_RECOVERY) {
+      return sendJson(res, 403, { error: "Password reset is disabled by default. Set ALLOW_INSECURE_ACCOUNT_RECOVERY=true only on a trusted local network." });
+    }
     const body = await readBody(req);
     const username = cleanUsername(body.username);
     const password = String(body.password || "");
@@ -889,14 +991,14 @@ async function handleAuthApi(req, res, url) {
     await writeUsers(users);
 
     const token = makeSession(user);
-    res.setHeader("set-cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+    res.setHeader("set-cookie", sessionCookie(req, token, Math.floor(SESSION_TTL_MS / 1000)));
     return sendJson(res, 200, { authenticated: true, hasUsers: true, user: publicUser(user) });
   }
 
   if (url.pathname === "/api/auth/logout" && req.method === "POST") {
     const token = parseCookies(req)[SESSION_COOKIE];
     if (token) sessions.delete(token);
-    res.setHeader("set-cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+    res.setHeader("set-cookie", clearSessionCookie(req));
     return sendJson(res, 200, { authenticated: false });
   }
 
@@ -933,7 +1035,13 @@ async function handleApi(req, res, url, user) {
     const target = decodeURIComponent(holdingMatch[1]);
     const input = normalizeHolding({ ...(await readBody(req)), id: target });
     const holdings = (await readHoldings(user)).map(normalizeHoldingRecord);
-    const index = holdings.findIndex((holding) => holding.id === target || holding.symbol === cleanSymbol(target));
+    let index = holdings.findIndex((holding) => holding.id === target);
+    if (index < 0) {
+      const symbolMatches = holdings
+        .map((holding, holdingIndex) => ({ holding, holdingIndex }))
+        .filter(({ holding }) => holding.symbol === cleanSymbol(target));
+      if (symbolMatches.length === 1) index = symbolMatches[0].holdingIndex;
+    }
     if (index < 0) return sendJson(res, 404, { error: `No holding found for ${target}.` });
     holdings[index] = { ...holdings[index], ...input };
     await writeHoldings(user, holdings);
@@ -942,8 +1050,16 @@ async function handleApi(req, res, url, user) {
 
   if (holdingMatch && req.method === "DELETE") {
     const target = decodeURIComponent(holdingMatch[1]);
-    const cleanTarget = cleanSymbol(target);
-    const holdings = (await readHoldings(user)).map(normalizeHoldingRecord).filter((holding) => holding.id !== target && holding.symbol !== cleanTarget);
+    const holdings = (await readHoldings(user)).map(normalizeHoldingRecord);
+    let index = holdings.findIndex((holding) => holding.id === target);
+    if (index < 0) {
+      const symbolMatches = holdings
+        .map((holding, holdingIndex) => ({ holding, holdingIndex }))
+        .filter(({ holding }) => holding.symbol === cleanSymbol(target));
+      if (symbolMatches.length === 1) index = symbolMatches[0].holdingIndex;
+    }
+    if (index < 0) return sendJson(res, 404, { error: `No holding found for ${target}.` });
+    holdings.splice(index, 1);
     await writeHoldings(user, holdings);
     return sendJson(res, 200, holdings);
   }
@@ -972,20 +1088,20 @@ async function serveStatic(req, res, url) {
     const content = await fs.readFile(filePath);
     const ext = path.extname(filePath);
     res.writeHead(200, {
+      ...securityHeaders(),
       "content-type": mimeTypes[ext] || "application/octet-stream",
       "cache-control": [".html", ".css", ".js"].includes(ext) ? "no-store" : "public, max-age=300"
     });
     res.end(content);
   } catch {
-    const fallback = await fs.readFile(path.join(PUBLIC_DIR, "index.html"));
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-    res.end(fallback);
+    return sendText(res, 404, "Not found");
   }
 }
 
 const server = http.createServer(async (req, res) => {
   try {
-    const url = new URL(req.url, `http://${req.headers.host}`);
+    const url = new URL(req.url, "http://localhost");
+    requireSameOrigin(req);
     if (url.pathname === "/api/health") return sendJson(res, 200, { ok: true, timestamp: new Date().toISOString() });
     if (url.pathname.startsWith("/api/auth/")) return await handleAuthApi(req, res, url);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url, await requireUser(req));
@@ -998,7 +1114,9 @@ const server = http.createServer(async (req, res) => {
 ensureStorage()
   .then(() => {
     server.listen(PORT, HOST, () => {
-      console.log(`Finance dashboard listening on http://${HOST}:${PORT}`);
+      const address = server.address();
+      const listeningPort = typeof address === "object" && address ? address.port : PORT;
+      console.log(`Finance dashboard listening on http://${HOST}:${listeningPort}`);
     });
   })
   .catch((error) => {

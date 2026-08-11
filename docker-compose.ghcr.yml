@@ -1,6 +1,6 @@
 services:
   finance-dashboard:
-    image: ${IMAGE_NAME:-ghcr.io/your-github-username/finance-dashboard:latest}
+    image: ${IMAGE_NAME:-ghcr.io/piskooooo/finance-dashboard:latest}
     container_name: finance-dashboard
     restart: unless-stopped
     ports:
@@ -10,6 +10,11 @@ services:
       PORT: 3000
       DATA_DIR: /app/data
       CACHE_TTL_MS: ${CACHE_TTL_MS:-900000}
+      UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:-10000}
+      SESSION_TTL_MS: ${SESSION_TTL_MS:-1209600000}
+      MAX_JSON_BODY_BYTES: ${MAX_JSON_BODY_BYTES:-1048576}
+      ALLOW_INSECURE_ACCOUNT_RECOVERY: ${ALLOW_INSECURE_ACCOUNT_RECOVERY:-false}
+      FORCE_SECURE_COOKIES: ${FORCE_SECURE_COOKIES:-false}
       PUID: ${PUID:-99}
       PGID: ${PGID:-100}
     volumes:
